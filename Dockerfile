@@ -19,8 +19,17 @@ RUN \
   apt-get install -y \
     git \
     libatomic1 \
-    nano \
+    nano vim \
+    build-essential cmake clang-14 \
+    zsh \
     net-tools \
+    python3.12 python3-pip libpcap-dev iproute2 \
+    iproute2 udhcpd \
+    libglib2.0-dev \
+    libfdt-dev \
+    libpixman-1-dev \
+    zlib1g-dev \
+    ninja-build libslirp-dev \
     sudo && \
   echo "**** install code-server ****" && \
   if [ -z ${CODE_RELEASE+x} ]; then \
@@ -41,6 +50,11 @@ RUN \
     /tmp/* \
     /var/lib/apt/lists/* \
     /var/tmp/*
+
+# RUN /app/code-server/bin/code-server \
+#   --install-extension franneck94.vscode-c-cpp-dev-extension-pack \
+#   --install-extension jeff-hykin.better-cpp-syntax \
+#   --install-extension vscodevim.vim 
 
 # add local files
 COPY /root /
