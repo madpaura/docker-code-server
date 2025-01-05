@@ -1,3 +1,4 @@
+#session_query_handler.py
 from flask import Flask, request, jsonify
 from database import UserDatabase
 import os
