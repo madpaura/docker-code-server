@@ -29,7 +29,7 @@ class PortManager:
             cursor.execute("SELECT * FROM port_allocations WHERE user_id = ?", (user_id,))
             if cursor.fetchone():
                 logger.error(f"Ports already allocated for user {user_id}.")
-                return None
+                return self.get_allocated_ports(user_id)
 
             # Find available ports
             allocated_ports = self._get_allocated_ports()

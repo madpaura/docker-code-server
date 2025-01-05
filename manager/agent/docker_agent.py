@@ -323,9 +323,6 @@ def generate_user_hash(username: str) -> str:
 def render_page(user):
     manager = DockerContainerManager()
 
-    st.set_page_config(page_title="QVP : CXL Remote Development", layout="wide")
-    st.title("QVP : CXL Remote Development")
-
     try:
         client = docker.from_env()
     except Exception as e:
@@ -449,8 +446,6 @@ def setup_workdir(user):
 
 def create_start_container(manager, user):
     # Load environment variables from .env file
-    load_dotenv(".env", override=True)
-
     env = {}
     env["PUID"] = 1000
     env["PGID"] = 1000
@@ -521,11 +516,47 @@ def create_start_container(manager, user):
     except Exception as e:
         error_msg(f"Failed to start container: {str(e)}")
 
+import requests
+
+def is_valid_session(remote_server_url, user_id, session_token):
+    payload = {
+        "user_id" : user_id,
+        "session_token" : session_token
+    }
+    try:
+        response = requests.post(
+            f"{remote_server_url}/validate_session",
+            json=payload,
+            timeout=10
+        )
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        return {"valid": False, "message": f"Request failed: {str(e)}"}
 
 def main():
-    # render_page("kavana.mv")
-    render_page("vishwa.mg")
+    load_dotenv(".env", override=True)
 
+    st.set_page_config(page_title="QVP : CXL Remote Development", layout="wide")
+    st.title("QVP : CXL Remote Development")
+
+    remote_ip = os.getenv("MGMT_CONSOLE_IP")
+    remote_port = os.getenv("MGMT_CONSOLE_PORT")
+    remote_server_url = f"http://{remote_ip}:{remote_port}"
+
+    query_params = st.query_params
+    user_id = query_params.get("user")
+    session_token = query_params.get("session_token")
+
+    logger.info(f"Client manager new request : user = {user_id}, session = {session_token}")
+
+    session = is_valid_session(remote_server_url, user_id, session_token)
+    if session.get("valid") == True:
+        logger.success(f"Session is valid, rendering page...")
+        render_page(user_id)
+    else:
+        st.error(f"Invalid session. {session.get('message', 'Please log in again.')}")
+        logger.error(f"Invalid session. {session.get('message', 'Please log in again.')}")
+        st.markdown(f'click [here] to login ({remote_server_url})')
 
 if __name__ == "__main__":
     main()

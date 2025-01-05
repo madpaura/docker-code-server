@@ -11,10 +11,10 @@ class DatabaseConfig:
     # Load database configuration from environment variables or config file
     def __init__(self):
         self.config = {
-            'host': os.getenv('DB_HOST', 'localhost'),
+            'host': os.getenv('DB_HOST', '0.0.0.0'),
             'database': os.getenv('DB_NAME', 'user_auth_db'),
-            'user': os.getenv('DB_USER', 'admin'),
-            'password': os.getenv('DB_PASSWORD', 'your_password'),
+            'user': os.getenv('DB_USER', 'root'),
+            'password': os.getenv('DB_PASSWORD', '12qwaszx'),
             'port': os.getenv('DB_PORT', 3306),
             'pool_name': 'mypool',
             'pool_size': 5
@@ -34,6 +34,7 @@ class UserDatabase:
     def _setup_connection_pool(cls):
         if cls._pool is None:
             db_config = DatabaseConfig()
+            print(db_config.config)
             cls._pool = mysql.connector.pooling.MySQLConnectionPool(**db_config.config)
 
     def _get_connection(self):
@@ -62,7 +63,7 @@ class UserDatabase:
             session_token VARCHAR(256),
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             expires_at TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
 
         CREATE TABLE IF NOT EXISTS audit_log (
@@ -72,7 +73,7 @@ class UserDatabase:
             action_details JSON,
             ip_address VARCHAR(50),
             timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id)
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         """
         
@@ -145,6 +146,28 @@ class UserDatabase:
             cursor.close()
             conn.close()
 
+    def delete_user_by_username(self, username: str) -> bool:
+        """Delete a user by their username"""
+        query = "DELETE FROM users WHERE username = %s"
+        
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(query, (username,))
+            conn.commit()
+            
+            # Check if any row was affected
+            if cursor.rowcount > 0:
+                return True
+            else:
+                return False
+        except mysql.connector.Error as e:
+            print(f"Error deleting user: {e}")
+            return False
+        finally:
+            cursor.close()
+            conn.close()
+
     def update_user(self, user_id: int, update_data: Dict) -> bool:
         """Update user information"""
         allowed_fields = ['email', 'password', 'is_approved', 'redirect_url', 'status', 'metadata']
@@ -153,9 +176,13 @@ class UserDatabase:
         
         for field in allowed_fields:
             if field in update_data:
-                update_fields.append(f"{field} = %s")
-                values.append(update_data[field])
-        
+                if field == 'metadata':  # Handle metadata separately
+                    update_fields.append(f"{field} = %s")
+                    values.append(json.dumps(update_data[field]))  # Convert dict to JSON string
+                else:
+                    update_fields.append(f"{field} = %s")
+                    values.append(update_data[field])
+            
         if not update_fields:
             return False
 
@@ -286,7 +313,39 @@ class UserDatabase:
         try:
             cursor = conn.cursor(dictionary=True)
             cursor.execute(query, (session_token,))
-            return cursor.fetchone()
+            session = cursor.fetchone()
+            return session is not None
+        finally:
+            cursor.close()
+            conn.close()
+
+    def get_audit_logs(self, username: str = None, limit: int = 100) -> List[Dict]:
+        """Get audit logs with optional username filter"""
+        if username and username != "All Users":
+            query = """
+            SELECT a.*, u.username 
+            FROM audit_log a
+            JOIN users u ON a.user_id = u.id
+            WHERE u.username = %s
+            ORDER BY a.timestamp DESC
+            LIMIT %s
+            """
+            params = (username, limit)
+        else:
+            query = """
+            SELECT a.*, u.username 
+            FROM audit_log a
+            JOIN users u ON a.user_id = u.id
+            ORDER BY a.timestamp DESC
+            LIMIT %s
+            """
+            params = (limit,)
+        
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query, params)
+            return cursor.fetchall()
         finally:
             cursor.close()
             conn.close()
