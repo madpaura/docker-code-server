@@ -12,7 +12,7 @@ from resouce_query_handler import query_available_servers
 import pandas as pd
 
 
-load_dotenv("/home/vishwa/workspace/cxl-deploy/.env", override=True)
+load_dotenv(".env", override=True)
 
 AGENT_SERVERS_LIST = os.getenv("AGENT_SERVERS_LIST")
 server_list = [server.strip() for server in AGENT_SERVERS_LIST.split(",")]

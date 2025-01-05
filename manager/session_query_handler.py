@@ -5,7 +5,7 @@ from dotenv import load_dotenv
 from loguru import logger
 import json
 
-load_dotenv("/home/vishwa/workspace/cxl-deploy/.env", override=True)
+load_dotenv(".env", override=True)
 
 app = Flask(__name__)
 db = UserDatabase()  # Initialize your database connection
