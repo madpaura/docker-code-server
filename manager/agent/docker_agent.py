@@ -18,6 +18,9 @@ from dotenv import load_dotenv
 import os
 from resource_manager import PortManager
 import socket
+import shutil
+import hashlib
+import uuid
 
 
 class DockerContainerManager:
@@ -253,7 +256,11 @@ def display_service_actions(container, user):
     st.sidebar.subheader("🔧 Actions")
 
     port_manager = PortManager()
-    ports = port_manager.get_allocated_ports(user)
+    port_range = port_manager.get_allocated_ports(user)
+    ports = {}
+    ports["code_port_host"] = port_range["start_port"]
+    ports["ssh_port_host"] = port_range["start_port"] + 1
+    ports["spice_port_host"] = port_range["start_port"] + 2
 
     container_ip = container.attrs["NetworkSettings"].get("IPAddress") or next(
         (
@@ -388,10 +395,6 @@ def get_machine_ip():
     ip_address = socket.gethostbyname(hostname)
     return ip_address
 
-import shutil
-import hashlib
-import uuid
-
 def is_valid_dir(dir):
     if not os.path.exists(dir):
         return False, "Destination directory does not exist."
@@ -472,9 +475,9 @@ def create_start_container(manager, user):
     port_manager = PortManager()
     new_ports = port_manager.allocate_ports(user)
 
-    code_port_host = new_ports["code_port_host"]
-    ssh_port_host = new_ports["ssh_port_host"]
-    spice_port_host = new_ports["spice_port_host"]
+    code_port_host = new_ports["start_port"]
+    ssh_port_host = new_ports["start_port"] + 1
+    spice_port_host = new_ports["start_port"] + 2
 
     volumes = {}
     volumes[guest_os_path_host] = {
