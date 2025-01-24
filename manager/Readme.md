@@ -9,35 +9,46 @@ It includes features like user registration, login, admin dashboard, audit logs,
 - **Audit Logs**: Track user actions and system events.
 - **Server Resources**: Monitor available servers and their resource usage.
 
-## How to Run
+# STEP - 1 Setup mysqld
+   Execute mysql.sh, to setup mysql docker server and setup initial database, mysql server will listen on port `3306`
+   ```bash
+   ./scripts/mysql.sh
+   ```
+# STEP -2 Run Authentication server
+1. ** Setup python `venv` environment**
+   Install python virtual environment: using below 
+   ```bash
+   python -m venv qvp-deploy
+   source qvp-deploy/bin/activate
+   ```
 
-1. **Install Dependencies**:
+2. **Install Dependencies**:
    Ensure you have Python installed, then install the required packages:
    ```bash
    pip install streamlit pandas python-dotenv
    ```
 
-2. **Set Up Environment Variables**:
+3. **Set Up Environment Variables**:
    Create a `.env` file in the root directory with the following variables:
    ```plaintext
-   AGENT_SERVERS_LIST=server1,server2
-   AGENT_RESOURCE_QUERY_PORT=8502
-   AGENT_CLIENT_PORT=8500
+   AGENTS_LIST=server1,server2
+   AGENT_PORT=8510
+   AGENT_RESOURCE_QUERY_PORT=8511
    ```
 
-3. **Run the Application**:
+4. **Run the Application**:
    Start the Streamlit app by running:
    ```bash
    streamlit run app.py
    ```
 
-4. **Access the App**:
+5. **Access the App**:
    Open your browser and navigate to `http://localhost:8501`.
 
 ---
 For more details, refer to the code in `app.py`.
 
-# Session Validation Server
+# STEP -3 Session Validation Server
 
 A simple Flask-based API to validate user sessions using a `session_token` and `user_id`.
 
@@ -55,7 +66,7 @@ A simple Flask-based API to validate user sessions using a `session_token` and `
 2. **Set Up Environment Variables**:
    Create a `.env` file in the root directory with the following variable:
    ```plaintext
-   MGMT_CONSOLE_PORT=8501
+   MGMT_SERVER_PORT=8500
    ```
 
 3. **Run the Application**:
