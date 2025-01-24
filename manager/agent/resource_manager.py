@@ -91,7 +91,7 @@ class PortManager:
         allocated_ranges.sort()  # Sort by start_port
 
         # Start searching from port 8000
-        next_start_port = 8000
+        next_start_port = 9000
 
         for start_port, end_port in allocated_ranges:
             if next_start_port + range_size - 1 < start_port:
