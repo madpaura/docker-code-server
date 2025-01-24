@@ -1,601 +1,685 @@
-# app.py
-import os, json, hashlib, secrets, time
+import os, sys, platform, socket, shutil, hashlib, uuid, docker
+import docker.errors
+import docker.models
+import docker.models.containers
 import streamlit as st
-from datetime import datetime, timedelta
-from typing import Dict
-from dotenv import load_dotenv
 import pandas as pd
+import plotly.graph_objects as go
+import dateutil.parser
+import webbrowser
+import subprocess
+import platform
+import requests
+import atexit
+
+from datetime import datetime
+from typing import Dict, Optional
+from loguru import logger
+from dotenv import load_dotenv
 from streamlit_option_menu import option_menu
 
-# project 
-from database import UserDatabase
-from query_agents import query_available_agents
-from session_query_handler import read_agents
+# project
+from resource_manager import PortManager
+
+class DockerContainerManager:
+    def __init__(self):
+        """Initialize Docker client"""
+        try:
+            self.client = docker.from_env()
+        except docker.errors.DockerException as e:
+            logger.error(f"Error connecting to Docker daemon: {e}")
+            sys.exit(1)
+
+    def create_container(
+        self,
+        image_name: str,
+        container_name: str = None,
+        ports: Dict[str, str] = None,
+        volumes: Dict[str, Dict[str, str]] = None,
+        environment: Dict[str, str] = None,
+        command: str = None,
+        detach: bool = True,
+        cpu_count: float = None,
+        cpu_percent: int = None,
+        memory_limit: str = None,
+        memory_swap: str = None,
+        memory_reservation: str = None,
+        host_name: str = "cx-qvp"
+    ):
+        try:
+            # Pull the image if it doesn't exist
+            try:
+                self.client.images.get(image_name)
+            except docker.errors.ImageNotFound:
+                logger.warning(f"Pulling image {image_name}...")
+                try:
+                    image = self.client.images.pull(image_name)
+                except docker.errors.APIError as e:
+                    logger.error("Failed pulling image")
+                    return None, f"Failed pulling image {image_name} Exception : {e}"
+
+            # Create and start the container
+            container = self.client.containers.run(
+                image=image_name,
+                name=container_name,
+                ports=ports,
+                volumes=volumes,
+                environment=environment,
+                command=command,
+                detach=detach,
+                cpu_count=cpu_count,
+                cpu_percent=cpu_percent,
+                mem_limit=memory_limit,
+                memswap_limit=memory_swap,
+                hostname=host_name,
+                privileged=True
+            )
+            logger.success(f"Container created successfully: {container.name}")
+            return container, "Sucess"
+
+        except docker.errors.APIError as e:
+            logger.error(f"Error creating container: {e}")
+            return None, f"Error creating container: {e}"
+
+    def list_container(self, name: str) -> Optional[docker.models.containers.Container]:
+        try:
+            container = self.client.containers.get(name)
+            return container
+        except docker.errors.NotFound:
+            logger.error(f"Container {name} not found")
+        except docker.errors.APIError as e:
+            logger.error(f"Error stopping container: {e}")
+
+    def stop_container(self, container_id_or_name: str):
+        try:
+            container = self.client.containers.get(container_id_or_name)
+            container.stop()
+            logger.success(f"Container {container_id_or_name} stopped successfully")
+        except docker.errors.NotFound:
+            logger.error(f"Container {container_id_or_name} not found")
+        except docker.errors.APIError as e:
+            logger.error(f"Error stopping container: {e}")
+
+    def remove_container(self, container_id_or_name: str, force: bool = False):
+        try:
+            container = self.client.containers.get(container_id_or_name)
+            container.remove(force=force)
+            logger.success(f"Container {container_id_or_name} removed successfully")
+        except docker.errors.NotFound:
+            logger.error(f"Container {container_id_or_name} not found")
+        except docker.errors.APIError as e:
+            logger.error(f"Error removing container: {e}")
 
 
-load_dotenv(".env", override=True)
-AGENTS_LIST = os.getenv("AGENTS_LIST")
-agents_list = [server.strip() for server in AGENTS_LIST.split(",")]
-agent_port = int(os.getenv("AGENT_PORT", 8510))
-agent_query_port = agent_port + 1
+@st.dialog("Error")
+def error_msg(msg, url=None):
+    st.error(msg, icon="🚨")
+    if url:
+        st.write(f"Please visit to install necessary toolchain: {url}")
+        if st.button("Go"):
+            webbrowser.open(url)
 
-# Initialize database connection
-db = UserDatabase()
-db.initialize_database()
 
-def generate_session_token():
-    return secrets.token_urlsafe(32)
+def get_container_stats(container):
+    """Get container statistics with fallback for different Docker versions"""
+    stats = container.stats(stream=False)
+    cpu_stats = stats.get("cpu_stats", {})
+    precpu_stats = stats.get("precpu_stats", {})
+    memory_stats = stats.get("memory_stats", {})
 
-def get_client_ip():
     try:
-        return st.experimental_get_query_params().get("client_ip", ["unknown"])[0]
-    except:
-        return "unknown"
+        cpu_total = cpu_stats.get("cpu_usage", {}).get("total_usage", 0)
+        precpu_total = precpu_stats.get("cpu_usage", {}).get("total_usage", 0)
+        system_cpu_usage = cpu_stats.get("system_cpu_usage", 0)
+        previous_system_cpu_usage = precpu_stats.get("system_cpu_usage", 0)
+
+        online_cpus = cpu_stats.get("online_cpus", 1) or 1
+        cpu_delta = cpu_total - precpu_total
+        system_delta = system_cpu_usage - previous_system_cpu_usage
+
+        cpu_usage = (
+            (cpu_delta / system_delta) * 100.0 * online_cpus
+            if system_delta > 0 and cpu_delta > 0
+            else 0.0
+        )
+
+        memory_usage = memory_stats.get("usage", 0)
+        memory_limit = memory_stats.get("limit", 1) or 1
+        memory_percentage = (memory_usage / memory_limit) * 100.0
+
+        return {
+            "cpu_usage": round(cpu_usage, 2),
+            "memory_usage": round(memory_percentage, 2),
+            "memory_used": round(memory_usage / (1024 * 1024), 2),
+            "memory_limit": round(memory_limit / (1024 * 1024), 2),
+        }
+    except Exception as e:
+        error_msg(f"Error calculating stats: {str(e)}")
+        return {"cpu_usage": 0, "memory_usage": 0, "memory_used": 0, "memory_limit": 0}
 
 
-def init_session_state():
-    if "logged_in" not in st.session_state:
-        st.session_state.logged_in = False
-        st.session_state.is_admin = False
-        st.session_state.username = None
-        st.session_state.user_id = None
-        st.session_state.session_token = None
+def parse_docker_timestamp(timestamp_str):
+    """Parse Docker timestamp string to datetime object"""
+    try:
+        return dateutil.parser.parse(timestamp_str).strftime("%Y-%m-%d %H:%M:%S")
+    except (TypeError, ValueError):
+        return "N/A"
 
 
-def handle_login(username: str, password: str) -> bool:
-    user = db.verify_login(username, password)
-    if user and user["is_approved"]:
-        session_token = generate_session_token()
-        expires_at = datetime.now() + timedelta(hours=24)
-        if db.create_session(user["id"], session_token, expires_at):
-            st.session_state.logged_in = True
-            st.session_state.is_admin = user["is_admin"]
-            st.session_state.username = user["username"]
-            st.session_state.user_id = user["id"]
-            st.session_state.session_token = session_token
+def create_gauge(value, title, color="royalblue"):
+    """Create a gauge chart using Plotly"""
+    return go.Figure(
+        go.Indicator(
+            mode="gauge+number",
+            value=value,
+            title={"text": title},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": color},
+                "steps": [
+                    {"range": [0, 50], "color": "lightgreen"},
+                    {"range": [50, 80], "color": "orange"},
+                    {"range": [80, 100], "color": "orangered"},
+                ],
+            },
+        )
+    ).update_layout(height=300)
 
-            db.log_audit(user["id"], "login", {"method": "password"}, get_client_ip())
-            return True
-    return False
+
+def display_container_stats(container):
+    st.header("Usage Statistics")
+    try:
+        stats = get_container_stats(container)
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.plotly_chart(
+                create_gauge(stats["cpu_usage"], "CPU Usage (%)"),
+                use_container_width=True,
+            )
+
+        with col2:
+            st.plotly_chart(
+                create_gauge(stats["memory_usage"], "Memory Usage (%)"),
+                use_container_width=True,
+            )
+
+        st.metric("Memory Used (MB)", f"{stats['memory_used']:.2f}")
+        st.metric("Memory Limit (MB)", f"{stats['memory_limit']:.2f}")
+    except Exception as e:
+        error_msg(f"Failed to get container statistics: {str(e)}")
 
 
-def display_audit_logs():
-    st.subheader("Audit Logs")
-
-    # Get all users for the filter
-    users = db.get_all_users()
-    user_options = ["All Users"] + [user["username"] for user in users]
-
-    col1, col2 = st.columns(2)
+def display_container_actions(container, user):
+    col1, col2, col3 = st.columns(3)
 
     with col1:
-        user_filter = st.selectbox(
-            "Filter by User", options=user_options, key="audit_user_filter"
-        )
+        if container.status != "running":
+            if st.button("▶️ Start"):
+                try:
+                    container.start()
+                    st.success("Container started successfully")
+                    st.rerun()
+                except Exception as e:
+                    error_msg(f"Failed to start container: {str(e)}")
+        else:
+            if st.button("⏹️ Stop"):
+                try:
+                    container.stop()
+                    st.success("Container stopped successfully")
+                    st.rerun()
+                except Exception as e:
+                    error_msg(f"Failed to stop container: {str(e)}")
 
     with col2:
-        n_rows = st.select_slider(
-            "Number of rows",
-            options=[10, 25, 50, 100, 500],
-            value=100,
-            key="n_rows_slider",
-        )
+        if st.button("🔄 Restart"):
+            try:
+                container.restart()
+                st.success("Container restarted successfully")
+                st.rerun()
+            except Exception as e:
+                error_msg(f"Failed to restart container: {str(e)}")
+
+    with col3:
+        if st.button("🗑️ Remove"):
+            try:
+                container.remove(force=True)
+                port_manager = PortManager()
+                new_ports = port_manager.deallocate_ports(user)
+                st.success("Container removed successfully")
+                st.rerun()
+            except Exception as e:
+                error_msg(f"Failed to remove container: {str(e)}")
+
+def blue_header(text):
+    st.markdown(f"<h3 style='color: blue;'> {text}</h3>", unsafe_allow_html=True)
+
+def display_service_actions(container, user, page):
+        
+    port_manager = PortManager()
+    port_range = port_manager.get_allocated_ports(user)
+
+    ports = {}
+    ports["code_port_host"] = port_range["start_port"]
+    ports["ssh_port_host"] = port_range["start_port"] + 1
+    ports["spice_port_host"] = port_range["start_port"] + 2
+    ports["fm_ui_port_host"] = port_range["start_port"] + 3
+    ports["fm_port_host"] = port_range["start_port"] + 4
+
+    container_ip = container.attrs["NetworkSettings"].get("IPAddress") or next(
+        (
+            net.get("IPAddress", "N/A")
+            for net in container.attrs["NetworkSettings"]["Networks"].values()
+        ),
+        "N/A",
+    )
+
+    container_ip, publicip = get_machine_ip()
+    if page == None:
+        st.write('No Conainers found...')
+
+    elif page == 'VS Code':
+        url = f"http://{container_ip}:{ports['code_port_host']}"
+        blue_header(url)
+        webbrowser.open(url)
+
+    elif page == 'SSH':
+        cmd = f"ssh -p {ports['ssh_port_host']} root@{container_ip}"
+        st.write("Run below command in putty or click below to download script")
+        col0, col1 = st.columns(2)
+        with col0:
+            blue_header(cmd)
+        with col1:
+            if platform.system() == "Windows":
+                st.download_button(label="📥 SSH", data=cmd, file_name="ssh.cmd", mime="application/bat")
+            else:
+                st.download_button(label="📥 SSH", data=cmd, file_name="ssh.sh", mime="application/bash")
+
+    elif page == 'RDP':
+        cmd = f"remote-viewer spice://{container_ip}:{ports['spice_port_host']}"
+        st.write("Run below command in SPICE viewer or click below to download script")
+        col0, col1 = st.columns(2)
+        with col0:
+            blue_header(cmd)
+        with col1:
+            if platform.system() == "Windows":
+                st.download_button(label="📥 RDP", data=cmd, file_name="rdp.cmd", mime="application/bat")
+            else:
+                st.download_button(label="📥 RDP", data=cmd, file_name="rdp.sh", mime="application/bash")
+    
+    elif page == 'FM-UI':
+        url = f"http://{container_ip}:{ports['fm_ui_port_host']}"
+        blue_header(url)
+        webbrowser.open(url)
+
+    with st.sidebar.expander("📡 Connection Info"):
+        st.write(f"Container IP: {container_ip}")
+        st.write("Default Ports:")
+        for service, port in ports.items():
+            service = service.replace("_port_host", "").upper()
+            st.write(f"- {service} - {port}")
+
+    with st.sidebar.expander("📥 Download Tools"):
+        add_download_tools("putty-64bit-0.82-installer.msi", "📥 Putty ", "download/putty-64bit-0.82-installer.msi", "application/msi")
+        add_download_tools("virt-viewer-x64-11.0-1.0.msi", "📥 Spice Viewer ", "download/virt-viewer-x64-11.0-1.0.msi", "application/msi")
+        add_download_tools("TRACE32.zip", "📥 TRACE32 ", "download/TRACE32.zip", "application/zip")
+
+def add_download_tools(tool, label, path, mime):
+    try:
+        with open(path, "rb") as file:
+            st.download_button(label=label, 
+                            data=file, file_name=tool,
+                                mime=mime)
+    except Exception as e:                
+        logger.warning(f"Failed setting up download {tool}")
+
+    
+def generate_user_hash(username: str) -> str:
+    import hashlib
+
+    # Create SHA-256 hash of username
+    hash_obj = hashlib.sha256(username.encode())
+
+    # Get first 16 characters of hexadecimal hash
+    return hash_obj.hexdigest()[:16]
+
+
+def render_page(user):
+    manager = DockerContainerManager()
 
     try:
-        logs = db.get_audit_logs(
-            username=user_filter if user_filter != "All Users" else None, limit=n_rows
-        )
-
-        if logs:
-            # Process the logs to ensure proper format
-            processed_logs = []
-            for log in logs:
-                # Convert action_details from string to dict if needed
-                action_details = log.get("action_details", "{}")
-                if isinstance(action_details, str):
-                    try:
-                        action_details = json.loads(action_details)
-                    except:
-                        action_details = {}
-
-                # Create a processed log entry
-                processed_log = {
-                    "Timestamp": pd.to_datetime(log["timestamp"]).strftime(
-                        "%Y-%m-%d %H:%M:%S"
-                    ),
-                    "Username": log["username"],
-                    "Action": log["action_type"],
-                    "IP Address": log["ip_address"],
-                    "Details": str(action_details),
-                }
-                processed_logs.append(processed_log)
-
-            # Create DataFrame
-            df = pd.DataFrame(processed_logs)
-
-            # Add search functionality
-            search_term = st.text_input("Search in logs:", "")
-            if search_term:
-                mask = (
-                    df.astype(str)
-                    .apply(lambda x: x.str.contains(search_term, case=False))
-                    .any(axis=1)
-                )
-                df = df[mask]
-
-            # Display data info
-            st.write(f"Showing {len(df)} records")
-
-            # Display the DataFrame with sorting enabled
-            st.dataframe(
-                df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Timestamp": st.column_config.TextColumn(
-                        "Timestamp",
-                        width="medium",
-                    ),
-                    "Username": st.column_config.TextColumn(
-                        "Username",
-                        width="small",
-                    ),
-                    "Action": st.column_config.TextColumn(
-                        "Action",
-                        width="small",
-                    ),
-                    "IP Address": st.column_config.TextColumn(
-                        "IP Address",
-                        width="small",
-                    ),
-                    "Details": st.column_config.TextColumn(
-                        "Details",
-                        width="large",
-                    ),
-                },
-            )
-
-            # Add export functionality
-            if st.button("Export to CSV"):
-                csv = df.to_csv(index=False)
-                st.download_button(
-                    label="Download CSV",
-                    data=csv,
-                    file_name="audit_logs.csv",
-                    mime="text/csv",
-                )
-
-        else:
-            st.info("No audit logs found")
+        client = docker.from_env()
     except Exception as e:
-        st.error(f"Error retrieving audit logs: {str(e)}")
-        st.info(
-            "If this is a new installation, make sure the audit_log table is properly created."
-        )
+        error_msg(f"Failed to connect to Docker: {str(e)}")
+        return
 
+    with st.sidebar:        
+        page = option_menu(
+            menu_title=f'{user}',
+            options=['Home', 'VS Code', 'SSH', 'RDP', "FM-UI"],
+            icons=['house', 'braces-asterisk', 'terminal','pc-display-horizontal', 'hdd-network'],
+            menu_icon='cast',
+            default_index=0,
+            styles={
+                "container": {"padding": "0!important","background-color":'white'},
+                "icon": {"color": "black", "font-size": "23px"},
+                "nav-link-selected": {"background-color": "#02a2e8"},
+                }
+            )
 
-def display_pending_approvals():
-    st.subheader("Pending Approvals")
-    pending_users = db.get_pending_users()
+    name = get_contianer_name(user)
+    container = manager.list_container(name)
 
-    if pending_users:
-        df = pd.DataFrame(pending_users)
+    if not container:
+        st.info("No containers found")
+        if st.button("▶️ Create"):
+            create_start_container(manager, user)
+        return
 
-        # Rename columns for better display
-        df = df.rename(
-            columns={
-                "username": "Username",
-                "email": "Email",
-                "created_at": "Registration Date",
+    if page == 'Home':
+        st.header("Available Instances")
+        container_data = [
+            {
+                "Container ID": container.short_id,
+                "Name": container.name,
+                "Image": container.image.tags[0] if container.image.tags else "None",
+                "Status": container.status,
+                "Created": parse_docker_timestamp(container.attrs["Created"]),
             }
-        )
+        ]
 
-        df["Registration Date"] = pd.to_datetime(df["Registration Date"]).dt.strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+        logger.info(container_data)
 
-        st.write(f"Found {len(df)} pending approval(s)")
+        df = pd.DataFrame(container_data)
+        st.dataframe(df)
 
-        # Add search functionality
-        search_term = st.text_input("Search pending users:", key="pending_search")
-        if search_term:
-            mask = (
-                df.astype(str)
-                .apply(lambda x: x.str.contains(search_term, case=False))
-                .any(axis=1)
-            )
-            df = df[mask]
+        st.header("Manage Instance")
+        display_container_actions(container, user)
 
-        # Display the DataFrame
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "Username": st.column_config.TextColumn(
-                    "Username",
-                    width="medium",
-                ),
-                "Email": st.column_config.TextColumn(
-                    "Email",
-                    width="medium",
-                ),
-                "Registration Date": st.column_config.TextColumn(
-                    "Registration Date",
-                    width="medium",
-                ),
-            },
-        )
+        if container.status == "running":
+            display_container_stats(container)
 
-        user_col, agent_col = st.columns(2)
-        with user_col:
-            # Create approval form
-            st.subheader("Approve Users")
-            selected_user = st.selectbox(
-                "Select user to approve",
-                options=df["Username"].tolist(),
-                key="user_to_approve",
-            )
+    display_service_actions(container, user, page)
 
-            if selected_user:
-                user_id = [
-                    u["id"] for u in pending_users if u["username"] == selected_user
-                ][0]
+def get_contianer_name(user):
+    name = f"code-server-{user}-{generate_user_hash(user)}"
+    return name
 
-        with agent_col:
-            with st.form(key=f"approve_form_{user_id}"):
-                agents_list = read_agents()
-                servers = query_available_agents(agents_list, agent_query_port)
-                server_options = (
-                    [server["server_id"] for server in servers]
-                    if servers
-                    else ["No servers available"]
-                )
-
-                # Select server from the list
-                selected_agent = st.selectbox(
-                    "Select a server for the user",
-                    options=server_options,
-                    key=f"server_select_{user_id}",
-                )
-
-                col1, col2 = st.columns([1, 4])
-                with col1:
-                    approve = st.form_submit_button("Approve")
-
-                if approve:
-                    if selected_agent == "No servers available":
-                        st.error("No servers available for assignment.")
-                    else:
-                        # Update the user's redirect URL with the selected server
-                        db.update_user(
-                            user_id,
-                            {
-                                "is_approved": True,
-                                "redirect_url": f"http://{selected_agent}:{agent_port}",
-                                "metadata": {"approved_by": st.session_state.username},
-                            },
-                        )
-                        db.log_audit(
-                            st.session_state.user_id,
-                            "approve_user",
-                            {"approved_user": selected_user},
-                            get_client_ip(),
-                        )
-                        st.success(
-                            f"Approved user {selected_user} and assigned to server {selected_agent}"
-                        )
-                        st.rerun()
-    else:
-        st.info("No pending approvals")
-
-
-def display_manage_users():
-    st.title("Manage Users")
-    users = db.get_all_users()
-
-    if users:
-        df = pd.DataFrame(users)
-
-        # Rename columns for better readability
-        df = df.rename(
-            columns={
-                "id": "ID",
-                "username": "Username",
-                "email": "Email",
-                "is_approved": "Approved",
-                "redirect_url": "Redirect URL",
-                "created_at": "Created At",
-            }
-        )
-
-        # Format the 'Approved' column to show 'Yes' or 'No'
-        df["Approved"] = df["Approved"].apply(lambda x: "Yes" if x else "No")
-
-        # Format the 'Created At' column to a readable date-time format
-        df["Created At"] = pd.to_datetime(df["Created At"]).dt.strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-
-        # Display the DataFrame
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "ID": st.column_config.TextColumn("ID", width="small"),
-                "Username": st.column_config.TextColumn("Username", width="medium"),
-                "Email": st.column_config.TextColumn("Email", width="medium"),
-                "Approved": st.column_config.TextColumn("Approved", width="small"),
-                "Redirect URL": st.column_config.TextColumn(
-                    "Redirect URL", width="large"
-                ),
-                "Created At": st.column_config.TextColumn("Created At", width="medium"),
-            },
-        )
-
-        # Add a delete user section
-        st.subheader("Delete User")
-        selected_user = st.selectbox(
-            "Select a user to delete",
-            options=df["Username"].tolist(),
-            key="delete_user_selectbox",
-        )
-
-        if selected_user:
-            user_id = df[df["Username"] == selected_user]["ID"].values[0]
-
-            # Confirmation step before deletion
-            confirm_delete = st.checkbox(
-                f"Are you sure you want to delete user '{selected_user}'?",
-                key=f"confirm_delete_{user_id}",
-            )
-
-            if confirm_delete:
-                if st.button("Delete User", key=f"delete_button_{user_id}"):
-                    db.log_audit(
-                        st.session_state.user_id,
-                        "delete_user",
-                        {"deleted_user": selected_user},
-                        get_client_ip(),
-                    )
-                    db.delete_user_by_username(selected_user)
-                    st.success(f"User '{selected_user}' has been deleted.")
-                    st.rerun()  # Refresh the page to update the user list
-    else:
-        st.info("No users found in the database.")
-
-def display_server_resources():
+def get_machine_ip():
     """
-    Display available servers and their resources in a Streamlit table.
+    Get both local and public IP addresses of the machine.
+    Returns a tuple of (local_ip, public_ip)
     """
-    st.subheader("Available Servers and Resources")
+    # Get local IP
+    try:
+        # Create a socket object
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # Doesn't actually connect but helps get local IP
+        s.connect(('8.8.8.8', 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+    except Exception as e:
+        local_ip = "Could not determine local IP: " + str(e)
 
+    # Get public IP
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        public_ip = s.getsockname()[0]
+        s.close()
+    except Exception as e:
+        public_ip = "Could not determine public IP: " + str(e)
+
+    # return "127.0.0.1", "127.0.0.1"
+    return local_ip, public_ip
+
+def is_valid_dir(dir):
+    if not os.path.exists(dir):
+        return False, "Destination directory does not exist."
+    if not os.path.isdir(dir):
+        return False, "Destination path is not a directory."
+    if not os.listdir(dir):
+        return False, "Destination directory is empty."
+    return True, "Destination directory is valid."
+
+def is_valid_sign(dir):
+    signature_file = f"{dir}" + "/signature.txt"
+    if not os.path.exists(signature_file):
+        return False, "Signature file does not exist."
+    with open(signature_file, 'r') as file:
+        content = file.read()
+        if "Timestamp:" not in content or "Unique Hash:" not in content:
+            return False, "Signature file is missing required content."
+    return True, "Signature file is valid."
+
+def copy_dir_with_progress(src, dst, progress_bar):
+    items = os.listdir(src)
+    total_items = len(items)
+    copied_items = 0
+
+    logger.info(total_items)
+    for item in items:
+        progress = int ((copied_items/total_items) * 100)
+        progress_bar.progress(progress, text=f"Copying {item} ...")
+        src_path = os.path.join(src, item)
+        dst_path = os.path.join(dst, item)
+
+        if os.path.isfile(src_path):
+            logger.info(f"File copy {src_path}")
+            shutil.copy2(src_path, dst_path)
+        elif os.path.isdir(src_path):
+            logger.info(f"Dir copy {src_path}")
+            shutil.copytree(src_path, dst_path)
+        copied_items += 1
+        logger.error(progress)
+
+def setup_workdir(user, dir_template, dir_deploy):
+    valid_dir, dir_error = is_valid_dir(dir_deploy)
+    valid_sign, sign_error = is_valid_sign(dir_deploy)
+
+    if valid_dir and valid_sign:
+        logger.success("Valid workdir exists")
+        return True
+
+    logger.warning(f"{dir_error}, {sign_error}")
     progress_bar = st.progress(0)
-    status_text = st.empty()  # Placeholder for status text
 
-    # Simulate progress while querying servers
-    for percent_complete in range(100):
-        time.sleep(0.002)  # Simulate a delay (replace with actual query logic)
-        progress_bar.progress(percent_complete + 1)
-        status_text.text(f"Querying server resources... {percent_complete + 1}%")
+    try:
+        # shutil.copytree(dir_template, f"{dir_deploy}", progress_bar)
+        copy_dir_with_progress(dir_template, f"{dir_deploy}", progress_bar)
 
-    agents_list = read_agents()
-    servers = query_available_agents(agents_list, agent_query_port)
-    if servers:
-        df = pd.DataFrame(servers)
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
-        # Rename columns for better readability
-        df = df.rename(
-            columns={
-                "cpu_count": "CPU Cores",
-                "total_memory": "Total Memory (GB)",
-                "host_cpu_used": "Host CPU Used (%)",
-                "host_memory_used": "Host Memory Used (GB)",
-                "docker_instances": "Docker Instances",
-                "allocated_cpu": "Allocated CPU (Cores)",
-                "allocated_memory": "Allocated Memory (GB)",
-                "remaining_cpu": "Remaining CPU (Cores)",
-                "remaining_memory": "Remaining Memory (GB)",
-            }
+        # Generate a unique hash (using UUID)
+        unique_hash = hashlib.sha256(str(uuid.uuid4()).encode()).hexdigest()
+
+        progress_bar.progress(90, text="Setting up signature...")
+        # Create a signature file in the destination directory
+        signature_file_path = os.path.join(dir_deploy, 'signature.txt')
+        with open(signature_file_path, 'w') as signature_file:
+            signature_file.write(f"Timestamp: {timestamp}\n")
+            signature_file.write(f"Unique Hash: {unique_hash}\n")
+
+    except Exception as e:
+        logger.error(f"Failed setting up workdir for user {user} : Exception {e}")
+        return False
+
+    progress_bar.progress(100, text="Almost there !! Setting up your container..")
+    return True
+
+def create_overlay(base_image_path, overlay_image_path):
+    try:
+        command = f"qemu-img create -f qcow2 -b {base_image_path} -F qcow2 {overlay_image_path}"
+        subprocess.check_call(command, shell=True)
+        return True
+
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to create overlay image: {e}")
+        return False
+
+def create_start_container(manager, user):
+    # Load environment variables from .env file
+    load_dotenv("../.env", override=True)
+    env = {}
+    env["PUID"] = os.geteuid()
+    env["PGID"] = os.getegid()
+    env["TZ"] = "Etc/UTC"
+    env["DEFAULT_WORKSPACE"] = os.getenv("DEFAULT_WORKSPACE", "/config/workspace")
+    env["SUDO_PASSWORD"] = os.getenv("SUDO_PASSWORD", "abc")
+
+    docker_image_name = os.getenv("DOCKER_IMAGE", "cxl.io/dev/code-server")
+    docker_image_tag = os.getenv("DOCKER_TAG", "latest")
+
+    dir_template = os.getenv("WORKDIR_TEMPLATE", "/opt/cxl/")
+    dir_deploy = os.getenv("WORKDIR_DEPLOY", "/home/vms/") + f"{user}-{generate_user_hash(user)}" 
+
+    if setup_workdir(user, dir_template, dir_deploy) == False:
+        error_msg(f"Failed setting up workdir for {user}, please contact admin")
+        return
+
+    # create overlay for guest os provided
+    guest_os_list = [item.strip() for item in os.getenv("GUEST_OS_LIST").split(",")]
+    for guest_os in guest_os_list:
+        dst_path = f"{dir_deploy}/guestos/{os.path.basename(os.path.dirname(guest_os))}"
+        os.makedirs(dst_path, exist_ok=True)
+        file_name = os.path.basename(guest_os)
+        name, ext = os.path.splitext(file_name)
+        new_file_name = f"{dst_path}/{name}_overlay{ext}"
+        logger.info(f"Creating Overlay : {guest_os}, {new_file_name}")
+        if create_overlay(guest_os, new_file_name) == False:
+            error_msg(f"Failed creating overlay for {user}, please contact admin")
+            return
+
+    # TODO revamp this section
+    container_name = get_contianer_name(user)
+    guest_os_path_host = os.path.join(dir_deploy, "guestos")
+    config_path_host = os.path.join(dir_deploy, "code/config")
+    qvp_bin_path_host = os.path.join(dir_deploy, "qvp")
+    tools_path_host = os.path.join(dir_deploy, "tools")
+    arm_path_host = os.path.join(dir_deploy, "tools/ARMCompiler6.16")
+
+    port_manager = PortManager()
+    new_ports = port_manager.allocate_ports(user)
+    start_port = int(new_ports["start_port"])
+
+    code_port_host = start_port
+    ssh_port_host = start_port + 1
+    spice_port_host = start_port + 2
+    fm_ui_port_host = start_port + 3
+    fm_port_host = start_port + 4
+
+    volumes = {}
+
+    volumes["/dev/kvm"] = {
+        "bind": "/dev/kvm",
+        "mode": "rw",
+    }
+
+    volumes["/opt/os/guestos_base"] = {
+        "bind": "/opt/os/guestos_base",
+        "mode": "ro",
+    }
+
+    volumes[guest_os_path_host] = {
+        "bind": os.getenv("GUEST_OS_MOUNT"),
+        "mode": "rw",
+    }
+    volumes[config_path_host] = {
+        "bind": os.getenv("CODE_CONFIG_MOUNT"),
+        "mode": "rw",
+    }
+
+    volumes[qvp_bin_path_host] = {
+        "bind": os.getenv("QVP_BINARY_MOUNT"),
+        "mode": "rw",
+    }
+
+    volumes[tools_path_host] = {
+        "bind": os.getenv("TOOLS_MOUNT"),
+        "mode": "ro",
+    }
+
+    volumes[arm_path_host] = {
+        "bind": "/usr/local/ARMCompiler6.16",
+        "mode": "ro",
+    }
+
+    volumes["/dev/kvm"] = {
+        "bind": "/dev/kvm",
+        "mode": "rw",
+    }
+
+    ports = {}
+    ports[os.getenv("CODE_PORT", 8443)] = code_port_host
+    ports[os.getenv("GUEST_OS_SSH_PORT", 22)] = ssh_port_host
+    ports[os.getenv("GUEST_OS_SPICE_PORT", 3001)] = spice_port_host
+    ports[os.getenv("OPENCXL_FM_PORT", 8000)] = fm_port_host
+    ports[os.getenv("OPENCXL_FM_UI_PORT", 3000)] = fm_ui_port_host
+
+    try:
+        container, error = manager.create_container(
+            image_name=f"{docker_image_name}:{docker_image_tag}",
+            container_name=container_name,
+            ports=ports,
+            volumes=volumes,
+            environment=env,
+            cpu_count=int(os.getenv("DOCKER_CPU", 2)),
+            cpu_percent=int(os.getenv("DOCKER_CPU_PERCENT", 100)),
+            memory_limit=os.getenv("DOCKER_MEM_LMT", "2g"),
+            memory_swap=os.getenv("DOCKER_MEM_SWAP", "3g"),
+            host_name = os.getenv("DOCKER_HOSTNAME", "cxl-qvp")
         )
+        if container == None:
+            error_msg(f"Failed to start container: {str(error)}")
+            return
 
-        # Display the DataFrame
-        st.dataframe(
-            df,
-            use_container_width=True,
-            hide_index=True,
-            column_config={
-                "CPU Cores": st.column_config.NumberColumn("CPU Cores"),
-                "Total Memory (GB)": st.column_config.NumberColumn(
-                    "Total Memory (GB)", format="%.2f GB"
-                ),
-                "Host CPU Used (%)": st.column_config.NumberColumn(
-                    "Host CPU Used (%)", format="%.2f %%"
-                ),
-                "Host Memory Used (GB)": st.column_config.NumberColumn(
-                    "Host Memory Used (GB)", format="%.2f GB"
-                ),
-                "Docker Instances": st.column_config.NumberColumn("Docker Instances"),
-                "Allocated CPU (Cores)": st.column_config.NumberColumn(
-                    "Allocated CPU (Cores)", format="%.2f cores"
-                ),
-                "Allocated Memory (GB)": st.column_config.NumberColumn(
-                    "Allocated Memory (GB)", format="%.2f GB"
-                ),
-                "Remaining CPU (Cores)": st.column_config.NumberColumn(
-                    "Remaining CPU (Cores)", format="%.2f cores"
-                ),
-                "Remaining Memory (GB)": st.column_config.NumberColumn(
-                    "Remaining Memory (GB)", format="%.2f GB"
-                ),
-            },
+        st.rerun()
+    except Exception as e:
+        error_msg(f"Failed to start container: {str(e)}")
+
+def is_valid_session(remote_server_url, user_id, session_token):
+    payload = {
+        "user_id" : user_id,
+        "session_token" : session_token
+    }
+    try:
+        response = requests.post(
+            f"{remote_server_url}/validate_session",
+            json=payload,
+            timeout=10
         )
-    else:
-        st.info("No servers available.")
-
-    # Clear the progress bar and status text
-    progress_bar.empty()
-    status_text.empty()
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        return {"valid": False, "message": f"Request failed: {str(e)}"}
 
 
 def main():
-    st.set_page_config(page_title="CXL-QVP Login", layout="wide")
-    init_session_state()
+    # load envs
+    load_dotenv("../.env", override=True)
+    manager_ip = os.getenv("MGMT_SERVER_IP")
+    manager_port = int(os.getenv("MGMT_SERVER_PORT")) + 1
+    url = f"http://{manager_ip}:{manager_port}"
 
-    # st.sidebar.markdown(
-    #     """
-    #     <div class="logo">
-    #         <img src="logo.png" alt="Logo">
-    #     </div>
-    #     """,
-    #     unsafe_allow_html=True,
-    # )
+    st.set_page_config(page_title="QVP : CXL Remote Development", layout="wide")
+    st.title("QVP : CXL Remote Development")
 
-    if not st.session_state.logged_in:
-        with st.sidebar:        
-            page = option_menu(
-                menu_title='CXL-QVP',
-                options=['Login', 'Register', 'About'],
-                icons=['person-circle', 'person-plus','info-circle'],
-                menu_icon='cast',
-                default_index=0,
-                styles={
-                    "container": {"padding": "0!important","background-color":'white'},
-                    "icon": {"color": "black", "font-size": "23px"}, 
-                    }
-                )
+    query_params = st.query_params
+    user_id = query_params.get("user")
+    session_token = query_params.get("session_token")
+
+    logger.info(f"Client manager new request : user = {user_id}, session = {session_token}")
+
+    # session params are part of redirect url
+    session = is_valid_session(url, user_id, session_token)
+    if session.get("valid") == True:
+        logger.success(f"Session is valid, rendering page...")
+        render_page(user_id)
     else:
-        if st.session_state.is_admin:
-            with st.sidebar:                    
-                page = option_menu(
-                    menu_title='CXL-QVP',
-                    options=['Home','Users', 'Agents', 'Audit Logs', "Logout"],
-                    icons=['house','people-fill', 'hdd-stack-fill','card-text', 'door-closed'],
-                    menu_icon='cast',
-                    default_index=0,
-                    styles={
-                        "container": {"padding": "0!important","background-color":'white'},
-                        "icon": {"color": "black", "font-size": "23px"}, 
-                        }
-                    )
-        else:
-            user = db.get_user_by_username(st.session_state.username)
-            if user and user["redirect_url"]:
-                st.success("Redirecting to your assigned application...")
-                url = (
-                    user["redirect_url"]
-                    + f"?user={st.session_state.username}&session_token={st.session_state.session_token}"
-                )
-                st.markdown(
-                    f'<meta http-equiv="refresh" content="2;url={url}">',
-                    unsafe_allow_html=True,
-                )
-                st.markdown(f"If not redirected, click [here]({url})")
-            with st.sidebar:        
-                page = option_menu(
-                    menu_title='CXL-QVP',
-                    options=['User Dashboard','Logout'],
-                    icons=['house','door-closed'],
-                    menu_icon='cast',
-                    default_index=0,
-                    styles={
-                        "container": {"padding": "0!important","background-color":'white'},
-                        "icon": {"color": "black", "font-size": "23px"}, 
-                        }
-                    )            
-
-    if page == "Login":
-        st.title("Login")
-        display_login()
-
-    elif page == "Register":
-        st.title("Register")
-        display_user_registration()
-
-    elif page == "Home" and st.session_state.is_admin:
-        st.title("Admin Dashboard")
-        st.write(f"Welcome, {st.session_state.username}!")
-        display_pending_approvals()
-
-    elif page == "Agents":
-        display_server_resources()
-
-    elif page == "Users" and st.session_state.is_admin:
-        display_manage_users()
-
-    elif page == "Audit Logs" and st.session_state.is_admin:
-        display_audit_logs()
-
-    elif page == "User Dashboard" and st.session_state.logged_in:
-        st.title("User Dashboard")
-        st.write(f"Welcome, {st.session_state.username}!")
-        user = db.get_user_by_username(st.session_state.username)
-        if user["redirect_url"]:
-            st.write("You will be redirected to your assigned application.")
-            url = (
-                user["redirect_url"]
-                + f"?user={st.session_state.username}&session_token={st.session_state.session_token}"
-            )
-            st.write(f"Assigned URL: {url}")
-        else:
-            st.warning("No redirect URL has been assigned to your account yet.")
-
-    elif page == "Logout":
-        if st.session_state.user_id:
-            db.log_audit(st.session_state.user_id, "logout", {}, get_client_ip())
-        st.session_state.logged_in = False
-        st.session_state.is_admin = False
-        st.session_state.username = None
-        st.session_state.user_id = None
-        st.session_state.session_token = None
-        st.success("Logged out successfully!")
-        st.rerun()
-
-    elif page == "About":
-        st.markdown('CXL-QVP Self-Hosted Cloud Development Environment')
-        st.markdown('Created by: [QVP Team](Using AI)')        
-
-def display_login():
-    with st.form("login_form"):
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        submit = st.form_submit_button("Login")
-
-        if submit:
-            if handle_login(username, password):
-                st.success("Login successful!")
-                st.rerun()
-            else:
-                st.error("Invalid credentials or account not approved")
-
-
-def display_user_registration():
-    with st.form("register_form"):
-        username = st.text_input("Username")
-        email = st.text_input("Email")
-        password = st.text_input("Password", type="password")
-        confirm_password = st.text_input("Confirm Password", type="password")
-        submit = st.form_submit_button("Register")
-
-        if submit:
-            if password != confirm_password:
-                st.error("Passwords do not match!")
-            elif not username or not email or not password:
-                st.error("Please fill in all fields!")
-            else:
-                user_data = {
-                    "username": username,
-                    "password": hashlib.sha256(password.encode()).hexdigest(),
-                    "email": email,
-                    "metadata": {"registration_source": "web"},
-                }
-                if db.create_user(user_data):
-                    st.success(
-                        "Registration successful! Please wait for admin approval."
-                    )
-                else:
-                    st.error("Username or email already exists!")
+        st.error(f"Invalid session. {session.get('message', 'Please log in again.')}")
+        logger.error(f"Invalid session. {session.get('message', 'Please log in again.')}")
+        st.markdown(f'click [here] to login ({url})')
 
 if __name__ == "__main__":
     main()
+    # st.write("hello")
+    
