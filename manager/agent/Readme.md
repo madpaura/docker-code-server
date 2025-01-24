@@ -64,13 +64,13 @@ remote desktop access.
    CODE_PORT=8443
    GUEST_OS_SSH_PORT=22
    GUEST_OS_SPICE_PORT=8100
-   MGMT_CONSOLE_IP=127.0.0.1
-   MGMT_CONSOLE_PORT=5000
+   MGMT_SERVER_IP=127.0.0.1
+   MGMT_SERVER_PORT=5000
    ```
 
 4. **Run the Application**:
    ```bash
-   streamlit run main.py
+   streamlit run docker_agent.py
    ```
 
 ## Usage
