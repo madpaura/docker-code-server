@@ -1,32 +1,30 @@
 # app.py
+import os, json, hashlib, secrets, time
 import streamlit as st
-import hashlib
 from datetime import datetime, timedelta
-import secrets
-from database import UserDatabase
-import os
 from typing import Dict
 from dotenv import load_dotenv
-import json
-from resouce_query_handler import query_available_servers
 import pandas as pd
+from streamlit_option_menu import option_menu
+
+# project 
+from database import UserDatabase
+from query_agents import query_available_agents
+from session_query_handler import read_agents
 
 
 load_dotenv(".env", override=True)
-
-AGENT_SERVERS_LIST = os.getenv("AGENT_SERVERS_LIST")
-server_list = [server.strip() for server in AGENT_SERVERS_LIST.split(",")]
-server_query_port = int(os.getenv("AGENT_RESOURCE_QUERY_PORT", 8502))
-server_client_port = int(os.getenv("AGENT_QUERY_PORT", 8500))
+AGENTS_LIST = os.getenv("AGENTS_LIST")
+agents_list = [server.strip() for server in AGENTS_LIST.split(",")]
+agent_port = int(os.getenv("AGENT_PORT", 8510))
+agent_query_port = agent_port + 1
 
 # Initialize database connection
 db = UserDatabase()
 db.initialize_database()
 
-
 def generate_session_token():
     return secrets.token_urlsafe(32)
-
 
 def get_client_ip():
     try:
@@ -229,22 +227,25 @@ def display_pending_approvals():
             },
         )
 
-        # Create approval form
-        st.subheader("Approve Users")
-        selected_user = st.selectbox(
-            "Select user to approve",
-            options=df["Username"].tolist(),
-            key="user_to_approve",
-        )
+        user_col, agent_col = st.columns(2)
+        with user_col:
+            # Create approval form
+            st.subheader("Approve Users")
+            selected_user = st.selectbox(
+                "Select user to approve",
+                options=df["Username"].tolist(),
+                key="user_to_approve",
+            )
 
-        if selected_user:
-            user_id = [
-                u["id"] for u in pending_users if u["username"] == selected_user
-            ][0]
+            if selected_user:
+                user_id = [
+                    u["id"] for u in pending_users if u["username"] == selected_user
+                ][0]
 
+        with agent_col:
             with st.form(key=f"approve_form_{user_id}"):
-
-                servers = query_available_servers(server_list, server_query_port)
+                agents_list = read_agents()
+                servers = query_available_agents(agents_list, agent_query_port)
                 server_options = (
                     [server["server_id"] for server in servers]
                     if servers
@@ -252,7 +253,7 @@ def display_pending_approvals():
                 )
 
                 # Select server from the list
-                selected_server = st.selectbox(
+                selected_agent = st.selectbox(
                     "Select a server for the user",
                     options=server_options,
                     key=f"server_select_{user_id}",
@@ -263,7 +264,7 @@ def display_pending_approvals():
                     approve = st.form_submit_button("Approve")
 
                 if approve:
-                    if selected_server == "No servers available":
+                    if selected_agent == "No servers available":
                         st.error("No servers available for assignment.")
                     else:
                         # Update the user's redirect URL with the selected server
@@ -271,7 +272,7 @@ def display_pending_approvals():
                             user_id,
                             {
                                 "is_approved": True,
-                                "redirect_url": f"http://{selected_server}:{server_client_port}",
+                                "redirect_url": f"http://{selected_agent}:{agent_port}",
                                 "metadata": {"approved_by": st.session_state.username},
                             },
                         )
@@ -282,7 +283,7 @@ def display_pending_approvals():
                             get_client_ip(),
                         )
                         st.success(
-                            f"Approved user {selected_user} and assigned to server {selected_server}"
+                            f"Approved user {selected_user} and assigned to server {selected_agent}"
                         )
                         st.rerun()
     else:
@@ -364,10 +365,6 @@ def display_manage_users():
     else:
         st.info("No users found in the database.")
 
-
-import time
-
-
 def display_server_resources():
     """
     Display available servers and their resources in a Streamlit table.
@@ -379,11 +376,12 @@ def display_server_resources():
 
     # Simulate progress while querying servers
     for percent_complete in range(100):
-        time.sleep(0.02)  # Simulate a delay (replace with actual query logic)
+        time.sleep(0.002)  # Simulate a delay (replace with actual query logic)
         progress_bar.progress(percent_complete + 1)
         status_text.text(f"Querying server resources... {percent_complete + 1}%")
 
-    servers = query_available_servers(server_list, server_query_port)
+    agents_list = read_agents()
+    servers = query_available_agents(agents_list, agent_query_port)
     if servers:
         df = pd.DataFrame(servers)
 
@@ -442,75 +440,45 @@ def display_server_resources():
 
 
 def main():
-    st.set_page_config(page_title="User Authentication System", layout="wide")
+    st.set_page_config(page_title="CXL-QVP Login", layout="wide")
     init_session_state()
 
-    st.markdown(
-        """
-            <style>
-                .sidebar .sidebar-content {
-                    padding: 20px;
-                }
-                .sidebar .sidebar-content .stRadio > div {
-                    display: flex;
-                    flex-direction: column;
-                    gap: 10px;
-                }
-                .sidebar .sidebar-content .stRadio label {
-                    display: flex;
-                    align-items: center;
-                    gap: 10px;
-                    font-size: 16px;
-                    padding: 10px;
-                    border-radius: 5px;
-                    transition: background-color 0.3s;
-                }
-                .sidebar .sidebar-content .stRadio label:hover {
-                    background-color: #f0f0f0;
-                }
-                .logo {
-                    text-align: center;
-                    margin-bottom: 20px;
-                }
-                .logo img {
-                    max-width: 100%;
-                    height: auto;
-                }
-            </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.sidebar.markdown(
-        """
-        <div class="logo">
-            <img src="/home/vishwa/workspace/cxl-deploy/docker-code-server/manager/logo.png" alt="Logo">
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.sidebar.divider()
+    # st.sidebar.markdown(
+    #     """
+    #     <div class="logo">
+    #         <img src="logo.png" alt="Logo">
+    #     </div>
+    #     """,
+    #     unsafe_allow_html=True,
+    # )
 
     if not st.session_state.logged_in:
-        page = st.sidebar.radio(
-            "Menu",
-            ["Login", "Register"],
-            format_func=lambda x: f"🔑 {x}" if x == "Login" else f"📝 {x}",
-        )
+        with st.sidebar:        
+            page = option_menu(
+                menu_title='CXL-QVP',
+                options=['Login', 'Register', 'About'],
+                icons=['person-circle', 'person-plus','info-circle'],
+                menu_icon='cast',
+                default_index=0,
+                styles={
+                    "container": {"padding": "0!important","background-color":'white'},
+                    "icon": {"color": "black", "font-size": "23px"}, 
+                    }
+                )
     else:
         if st.session_state.is_admin:
-            page = st.sidebar.radio(
-                "Menu",
-                ["Admin Dashboard", "Manage Users", "Servers", "Audit Logs", "Logout"],
-                format_func=lambda x: {
-                    "Admin Dashboard": "📊 Admin Dashboard",
-                    "Manage Users": "👥 Manage Users",
-                    "Servers": "🖥️ Servers",
-                    "Audit Logs": "📋 Audit Logs",
-                    "Logout": "🚪 Logout",
-                }[x],
-            )
+            with st.sidebar:                    
+                page = option_menu(
+                    menu_title='CXL-QVP',
+                    options=['Home','Users', 'Agents', 'Audit Logs', "Logout"],
+                    icons=['house','people-fill', 'hdd-stack-fill','card-text', 'door-closed'],
+                    menu_icon='cast',
+                    default_index=0,
+                    styles={
+                        "container": {"padding": "0!important","background-color":'white'},
+                        "icon": {"color": "black", "font-size": "23px"}, 
+                        }
+                    )
         else:
             user = db.get_user_by_username(st.session_state.username)
             if user and user["redirect_url"]:
@@ -524,7 +492,18 @@ def main():
                     unsafe_allow_html=True,
                 )
                 st.markdown(f"If not redirected, click [here]({url})")
-            page = st.sidebar.radio("Menu", ["User Dashboard", "Logout"])
+            with st.sidebar:        
+                page = option_menu(
+                    menu_title='CXL-QVP',
+                    options=['User Dashboard','Logout'],
+                    icons=['house','door-closed'],
+                    menu_icon='cast',
+                    default_index=0,
+                    styles={
+                        "container": {"padding": "0!important","background-color":'white'},
+                        "icon": {"color": "black", "font-size": "23px"}, 
+                        }
+                    )            
 
     if page == "Login":
         st.title("Login")
@@ -534,15 +513,15 @@ def main():
         st.title("Register")
         display_user_registration()
 
-    elif page == "Admin Dashboard" and st.session_state.is_admin:
+    elif page == "Home" and st.session_state.is_admin:
         st.title("Admin Dashboard")
         st.write(f"Welcome, {st.session_state.username}!")
         display_pending_approvals()
 
-    elif page == "Servers":
+    elif page == "Agents":
         display_server_resources()
 
-    elif page == "Manage Users" and st.session_state.is_admin:
+    elif page == "Users" and st.session_state.is_admin:
         display_manage_users()
 
     elif page == "Audit Logs" and st.session_state.is_admin:
@@ -573,6 +552,9 @@ def main():
         st.success("Logged out successfully!")
         st.rerun()
 
+    elif page == "About":
+        st.markdown('CXL-QVP Self-Hosted Cloud Development Environment')
+        st.markdown('Created by: [QVP Team](Using AI)')        
 
 def display_login():
     with st.form("login_form"):
@@ -614,7 +596,6 @@ def display_user_registration():
                     )
                 else:
                     st.error("Username or email already exists!")
-
 
 if __name__ == "__main__":
     main()
