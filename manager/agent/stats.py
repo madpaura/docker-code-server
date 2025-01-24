@@ -1,13 +1,89 @@
-import socket
-import json
-import threading
 import psutil
 import docker
 from docker.errors import DockerException
-import argparse
+from loguru import logger
+import toml
+import os
+from dotenv import load_dotenv
+from flask import Flask, request, jsonify
+import schedule
+import time
+import socket
+import requests
+import os, sys
+from loguru import logger
+from dotenv import load_dotenv
+import atexit
+
+load_dotenv(".env", override=True)
+
+app = Flask(__name__)
+
+def get_machine_ip():
+    """
+    Get both local and public IP addresses of the machine.
+    Returns a tuple of (local_ip, public_ip)
+    """
+    # Get local IP
+    try:
+        # Create a socket object
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # Doesn't actually connect but helps get local IP
+        s.connect(('8.8.8.8', 80))
+        local_ip = s.getsockname()[0]
+        s.close()
+    except Exception as e:
+        local_ip = "Could not determine local IP: " + str(e)
+
+    # Get public IP
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        public_ip = s.getsockname()[0]
+        s.close()
+    except Exception as e:
+        public_ip = "Could not determine public IP: " + str(e)
+
+    # return "127.0.0.1", "127.0.0.1"
+    return local_ip, public_ip
+
+def register_agent(url, agent):
+    """Register the agent with the given URL and agent ID."""
+    try:
+        response = requests.post(f"{url}/register_agent", json={"agent": f"{agent}"})
+        logger.info(response.json())
+    except Exception as e:
+        logger.error(e)
+
+def unregister_agent(url, agent):
+    """Unregister the agent with the given URL and agent ID."""
+    try:
+        response = requests.post(f"{url}/unregister_agent", json={"agent": f"{agent}"})
+        logger.info(response.json())
+    except Exception as e:
+        logger.error(e)
+
+def job():
+    """Register the agent every 5 minutes."""
+    load_dotenv("../.env", override=True)
+    manager_ip = os.getenv("MGMT_SERVER_IP")
+    manager_port = int(os.getenv("MGMT_SERVER_PORT")) + 1
+    url = f"http://{manager_ip}:{manager_port}"
+    localip, publicip = get_machine_ip()
+    register_agent(url, localip)
 
 
-def get_server_resources():
+def on_exit():
+    load_dotenv("../.env", override=True)
+    manager_ip = os.getenv("MGMT_SERVER_IP")
+    manager_port = int(os.getenv("MGMT_SERVER_PORT")) + 1
+    url = f"http://{manager_ip}:{manager_port}"    
+    localip, publicip = get_machine_ip()
+    unregister_agent(url, localip)
+
+atexit.register(on_exit)
+
+def get_agent_resources():
     """
     Fetch server resource information (CPU, memory, Docker instances, etc.).
     """
@@ -43,10 +119,10 @@ def get_server_resources():
                 allocated_cpu += host_config.get("CpuCount") 
                 allocated_memory += host_config.get("Memory") / (1024 **3)
 
-                print(allocated_cpu, allocated_memory)
+                logger.info(f"{allocated_cpu}, {allocated_memory}")
 
     except DockerException as e:
-        print(f"Error fetching Docker container stats: {e}")
+        logger.error(f"Error fetching Docker container stats: {e}")
         docker_instances = 0
         allocated_cpu = 0
         allocated_memory = 0
@@ -68,56 +144,25 @@ def get_server_resources():
     }
 
 
-def handle_client_connection(client_socket):
+@app.route('/get_resources', methods=['GET'])
+def get_resources():
     """
-    Handle a client connection: receive request and send resource information.
+    Handle GET request to fetch agents resources.
     """
-    try:
-        # Receive request from client
-        request = client_socket.recv(1024).decode("utf-8")
-        if request == "get_resources":
-            # Fetch server resources
-            resources = get_server_resources()
-            # Send resources as JSON response
-            client_socket.send(json.dumps(resources).encode("utf-8"))
-    except Exception as e:
-        print(f"Error handling client connection: {e}")
-    finally:
-        client_socket.close()
-
-
-def start_resource_publisher(host="0.0.0.0", port=5000):
-    """
-    Start the resource publisher server to listen for requests.
-    """
-    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_socket.bind((host, port))
-    server_socket.listen(5)
-    print(f"Resource publisher server started on {host}:{port}")
-
-    while True:
-        client_socket, addr = server_socket.accept()
-        print(f"Connection from {addr}")
-        # Handle client connection in a new thread
-        client_thread = threading.Thread(
-            target=handle_client_connection, args=(client_socket,)
-        )
-        client_thread.start()
-
-
-# Run the server in a separate thread
-def run_server(port):
-    """
-    Start the resource publisher server in a background thread.
-    """
-    server_thread = threading.Thread(target=start_resource_publisher, args=("0.0.0.0", port), daemon=True)
-    server_thread.start()
-    server_thread.join()
-
+    resources = get_agent_resources()
+    print(resources)
+    return jsonify(resources)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Start the resource publisher server.")
-    parser.add_argument("--port", type=int, default=5000, help="The port to run the server on.")
-    args = parser.parse_args()
+    config_path = os.path.join('.streamlit', 'config.toml')
+    if os.path.exists(config_path):
+        config = toml.load(config_path)
+        port = config.get('server', {}).get('stats_port', 8511)
+    else:
+        port = 8511
 
-    run_server(args.port)
+    job()
+    # schedule.every(5).seconds.do(job)  # Run the job every 5 minutes
+
+    app.run(host="0.0.0.0", port=port)
+    
