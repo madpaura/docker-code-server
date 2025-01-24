@@ -76,7 +76,6 @@ class UserDatabase:
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
         );
         """
-        
         conn = self._get_connection()
         try:
             cursor = conn.cursor()
