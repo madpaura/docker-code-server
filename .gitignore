@@ -42,3 +42,8 @@ Network Trash Folder
 Temporary Items
 .apdisk
 .jenkins-external
+
+*.log
+__pycache__
+*.db
+*.txt

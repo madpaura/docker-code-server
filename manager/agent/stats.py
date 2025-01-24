@@ -50,7 +50,7 @@ def get_machine_ip():
 def register_agent(url, agent):
     """Register the agent with the given URL and agent ID."""
     try:
-        response = requests.post(f"{url}/register_agent", json={"agent": f"{agent}"})
+        response = requests.post(f"{url}/api/register_agent", json={"agent": f"{agent}"})
         logger.info(response.json())
     except Exception as e:
         logger.error(e)
@@ -58,7 +58,7 @@ def register_agent(url, agent):
 def unregister_agent(url, agent):
     """Unregister the agent with the given URL and agent ID."""
     try:
-        response = requests.post(f"{url}/unregister_agent", json={"agent": f"{agent}"})
+        response = requests.post(f"{url}/api/unregister_agent", json={"agent": f"{agent}"})
         logger.info(response.json())
     except Exception as e:
         logger.error(e)
