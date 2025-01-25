@@ -178,3 +178,21 @@ ipcMain.handle('container-create', async (event, username) => {
     throw new Error(error.response?.data?.error || 'Failed to create container')
   }
 })
+
+ipcMain.handle('ssh-connect', async (event, { username, host, port }) => {
+  const { spawn } = require('child_process')
+  const command = `ssh ${username}@${host} -p ${port};read`
+  
+  try {
+    const terminal = spawn('gnome-terminal', ['--', 'bash', '-c', command], {
+      detached: true,
+      stdio: 'ignore'
+    })
+    
+    terminal.unref()
+    return { success: true }
+  } catch (error) {
+    console.error('SSH connection failed:', error)
+    throw new Error(`SSH connection failed: ${error.message}`)
+  }
+})

@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   containerCreate: (username) => ipcRenderer.invoke('container-create', username),
   generateUserHash: (username) => ipcRenderer.invoke('generate-user-hash', username),
   closeApp: () => ipcRenderer.invoke('close-app'),
+  sshConnect: (username, host, port) => ipcRenderer.invoke('ssh-connect', { username, host, port }),
   on: (channel, callback) => {
     ipcRenderer.on(channel, (event, ...args) => callback(...args))
   }

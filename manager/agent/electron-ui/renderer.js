@@ -268,6 +268,30 @@ window.electronAPI.on('service-action', (service) => {
   showServiceInfo(service)
 })
 
+// Handle SSH connection form submission
+const handleSSHConnect = async () => {
+  const status = document.getElementById('ssh-status')
+  if (!status) return
+  
+  status.classList.remove('bg-red-100', 'text-red-700')
+  status.classList.remove('bg-green-100', 'text-green-700')
+  status.classList.add('bg-blue-100', 'text-blue-700')
+  status.textContent = 'Connecting via SSH...'
+  
+  const host = '127.0.0.1'
+  const port = 22
+  const username = 'root'
+  
+  try {
+    await window.electronAPI.sshConnect({ username, host, port })
+    status.classList.add('bg-green-100', 'text-green-700')
+    status.textContent = 'Connection successful!'
+  } catch (error) {
+    status.classList.add('bg-red-100', 'text-red-700')
+    status.textContent = `Connection failed: ${error.message}`
+  }
+}
+
 const showServiceInfo = (service) => {
   serviceInfoSection.classList.remove('hidden')
   
@@ -285,11 +309,24 @@ const showServiceInfo = (service) => {
     case 'ssh':
       serviceTitle.textContent = 'SSH Access'
       serviceContent.innerHTML = `
-        <div class="mb-2">Use the following command to connect via SSH:</div>
-        <div class="bg-gray-100 p-2 rounded">
-          <code id="ssh-command"></code>
+        <div class="space-y-4">
+          <div>
+            <div class="mb-2">Use the following command to connect via SSH:</div>
+            <div class="bg-gray-100 p-2 rounded">
+              <code id="ssh-command"></code>
+            </div>
+          </div>
+          
+          <div class="border-t pt-4">
+            <div id="ssh-status" class="mt-4 p-3 rounded-md bg-blue-100 text-blue-700">
+              Connecting via SSH...
+            </div>
+          </div>
+          <script>
+          </script>
         </div>
       `
+      handleSSHConnect()
       break
       
     case 'rdp':
