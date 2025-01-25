@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CXL Remote Development</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <style>
+    .gauge-container {
+      width: 100%;
+      height: 200px;
+    }
+    #window-controls {
+      position: fixed;
+      top: 0;
+      right: 0;
+      padding: 8px;
+      z-index: 1000;
+    }
+    #close-btn {
+      background: #ef4444;
+      color: white;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    #close-btn:hover {
+      background: #dc2626;
+    }
+  </style>
+</head>
+<body class="bg-gray-100">
+  <div id="window-controls">
+    <div id="close-btn">
+      <i class="bi bi-x"></i>
+    </div>
+  </div>
+  <div class="flex">
+    <!-- Sidebar -->
+    <div class="w-16 bg-gray-800 text-white p-1 flex flex-col justify-between">
+      <div>
+        <h2 class="text-sm font-bold mb-2">Services</h2>
+        <ul class="space-y-1">
+          <li>
+            <button class="w-full p-1 rounded hover:bg-gray-700 service-btn flex items-center justify-center"
+                    data-service="vscode"
+                    title="VS Code">
+              <i class="bi bi-code-square text-lg"></i>
+            </button>
+          </li>
+          <li>
+            <button class="w-full p-1 rounded hover:bg-gray-700 service-btn flex items-center justify-center"
+                    data-service="ssh"
+                    title="SSH">
+              <i class="bi bi-terminal text-lg"></i>
+            </button>
+          </li>
+          <li>
+            <button class="w-full p-1 rounded hover:bg-gray-700 service-btn flex items-center justify-center"
+                    data-service="rdp"
+                    title="RDP">
+              <i class="bi bi-display text-lg"></i>
+            </button>
+          </li>
+          <li>
+            <button class="w-full p-1 rounded hover:bg-gray-700 service-btn flex items-center justify-center"
+                    data-service="fm"
+                    title="FM UI">
+              <i class="bi bi-hdd-network text-lg"></i>
+            </button>
+          </li>
+        </ul>
+      </div>
+      <div class="mb-2">
+        <button id="about-btn" class="w-full p-1 rounded hover:bg-gray-700 flex items-center justify-center"
+                title="About">
+          <i class="bi bi-info-circle text-lg"></i>
+        </button>
+      </div>
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    </div>
+
+    <!-- Main Content -->
+    <div class="flex-1 container mx-auto p-2">
+      <h1 class="text-xl font-bold mb-2">CXL Remote Development</h1>
+      
+      <div class="grid grid-cols-1 gap-2">
+        <!-- Container Selection -->
+        <div class="bg-white p-2 rounded shadow">
+          <h2 class="text-lg font-semibold mb-2">Select Container</h2>
+          <div class="flex gap-1 items-center">
+            <select id="container-select" class="w-full p-1 border rounded">
+              <option value="">Select a container</option>
+            </select>
+            <div class="flex gap-1">
+              <button id="create-btn" class="btn-action p-1 rounded hover:bg-green-100" title="Create Container">
+                <i class="bi bi-plus-circle text-green-600"></i>
+              </button>
+              <button id="start-btn" class="btn-action p-1 rounded hover:bg-green-100" title="Start Container">
+                <i class="bi bi-play-circle text-green-600"></i>
+              </button>
+              <button id="stop-btn" class="btn-action p-1 rounded hover:bg-red-100" title="Stop Container">
+                <i class="bi bi-stop-circle text-red-600"></i>
+              </button>
+              <button id="restart-btn" class="btn-action p-1 rounded hover:bg-yellow-100" title="Restart Container">
+                <i class="bi bi-arrow-repeat text-yellow-600"></i>
+              </button>
+              <button id="remove-btn" class="btn-action p-1 rounded hover:bg-gray-100" title="Remove Container">
+                <i class="bi bi-trash text-gray-600"></i>
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Container Info Section -->
+        <div class="bg-white p-2 rounded shadow">
+          <h2 class="text-lg font-semibold mb-2">Container Information</h2>
+          <div id="container-info"></div>
+        </div>
+
+        <!-- Service Info Section -->
+        <div class="bg-white p-2 rounded shadow hidden" id="service-info">
+          <h2 class="text-lg font-semibold mb-2" id="service-title"></h2>
+          <div id="service-content"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+    </div>
+
+  </div>
+
+  <script src="renderer.js"></script>
+  <script src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>
+</body>
+</html>
