@@ -12,7 +12,7 @@ import toml
 import ipaddress
 
 # Configure logger
-logger.add("backend.log", rotation="500 MB", retention="10 days", level="INFO")
+logger.add("manager_backend.log", rotation="500 MB", retention="10 days", level="INFO")
 
 # Load environment variables
 load_dotenv(".env", override=True)

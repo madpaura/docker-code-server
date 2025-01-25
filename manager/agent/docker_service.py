@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 from resource_manager import PortManager
 
 # Configure logger
-logger.add("agent_backend.log", rotation="500 MB", retention="10 days", level="INFO")
+logger.add("agent_service.log", rotation="500 MB", retention="10 days", level="INFO")
 
 # Load environment variables
 load_dotenv(".env", override=True)

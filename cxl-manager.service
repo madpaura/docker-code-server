@@ -1,0 +1,18 @@
+[Unit]
+Description=CXL Manager Services (Flask Admin + Streamlit Manager)
+After=network.target
+
+[Service]
+User=vishwa
+Group=vishwa
+WorkingDirectory=/home/vishwa/workspace/cxl-deploy/docker-code-server/manager
+ExecStart=/bin/bash -c 'python3 admin_service.py & streamlit run manager_app.py'
+Restart=always
+RestartSec=5
+Environment="PYTHONUNBUFFERED=1"
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=cxl-manager
+
+[Install]
+WantedBy=multi-user.target

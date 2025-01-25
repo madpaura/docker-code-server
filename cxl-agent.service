@@ -1,0 +1,18 @@
+[Unit]
+Description=CXL Agent Services (Flask Docker Service + Streamlit App)
+After=network.target
+
+[Service]
+User=vishwa
+Group=vishwa
+WorkingDirectory=/home/vishwa/workspace/cxl-deploy/docker-code-server/manager/agent
+ExecStart=/bin/bash -c 'python3 docker_service.py & python3 app.py'
+Restart=always
+RestartSec=5
+Environment="PYTHONUNBUFFERED=1"
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=cxl-agent
+
+[Install]
+WantedBy=multi-user.target
