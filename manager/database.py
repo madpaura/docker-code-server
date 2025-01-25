@@ -145,6 +145,18 @@ class UserDatabase:
             cursor.close()
             conn.close()
 
+    def get_user_by_id(self, user_id: int) -> Optional[Dict]:
+        """Get user by username"""
+        query = "SELECT * FROM users WHERE id = %s"
+        conn = self._get_connection()
+        try:
+            cursor = conn.cursor(dictionary=True)
+            cursor.execute(query, (user_id,))
+            return cursor.fetchone()
+        finally:
+            cursor.close()
+            conn.close()
+
     def delete_user_by_username(self, username: str) -> bool:
         """Delete a user by their username"""
         query = "DELETE FROM users WHERE username = %s"

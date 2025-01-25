@@ -53,3 +53,6 @@ chmod 777 /dev/kvm
  docker pull 107.110.39.183:5000/cxl.io/dev/code-server:latest
  ```
  
+
+ # Setup tools download folder under agent directory for user to download
+ 

@@ -124,6 +124,17 @@ def get_users():
     logger.warning("No users found in database")
     return jsonify({'success': False, 'error': 'No users found'}), 404
 
+@app.route('/api/users/<int:user_id>', methods=['GET'])
+def get_user_info(user_id):
+    logger.info("Fetching all users")
+    user = db.get_user_by_id(user_id)
+    if user:
+        logger.success(f"Found {len(user)} user")
+        return jsonify({'success': True, 'redirect_url': user['redirect_url']})
+
+    logger.warning("No users found in database")
+    return jsonify({'success': False, 'error': 'No users found'}), 404
+
 @app.route('/api/users/<int:user_id>', methods=['DELETE'])
 def delete_user(user_id):
     if db.delete_user_by_id(user_id):
