@@ -9,9 +9,11 @@ let tray = null
 
 function createWindow() {
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-    frame: false,
+    width: 640,
+    height: 480,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: true,
@@ -20,6 +22,9 @@ function createWindow() {
   })
 
   mainWindow.loadFile('index.html')
+
+  // Remove menu bar while keeping title bar
+  Menu.setApplicationMenu(null)
   
   // Open the DevTools in development mode
   if (process.env.NODE_ENV === 'development') {

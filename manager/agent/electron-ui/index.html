@@ -3,13 +3,101 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CXL Remote Development</title>
+  <title>QVP-CXL</title>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+      background-color: #f5f5f5;
+    }
+
+    #app-container {
+      display: flex;
+      height: 100%;
+    }
+
     .gauge-container {
       width: 100%;
       height: 200px;
     }
+
+    .sidebar {
+      height: 100%;
+      width: 4rem;
+      display: flex;
+      flex-direction: column;
+      background-color: rgb(31, 41, 55);
+    }
+
+    .main-content {
+      flex: 1;
+      overflow-y: auto;
+      height: 100%;
+      background-color: #f5f5f5;
+      padding: 1rem;
+    }
+
+    .material-card {
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 1px 2px rgba(0, 0, 0, 0.24);
+      transition: box-shadow 0.3s cubic-bezier(.25,.8,.25,1);
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .material-card:hover {
+      box-shadow: 0 3px 6px rgba(0, 0, 0, 0.16), 0 3px 6px rgba(0, 0, 0, 0.23);
+    }
+
+    .card-header {
+      padding: 0.5rem;
+      border-bottom: 1px solid #e0e0e0;
+      background-color: #fafafa;
+    }
+
+    .card-content {
+      padding: 0.5rem;
+    }
+
+    .material-select {
+      border: none;
+      border-bottom: 2px solid #e0e0e0;
+      border-radius: 0;
+      padding: 0.5rem 0;
+      transition: border-color 0.3s ease;
+      background-color: transparent;
+    }
+
+    .material-select:focus {
+      outline: none;
+      border-bottom-color: #3b82f6;
+    }
+
+    .material-btn {
+      border-radius: 4px;
+      padding: 0.5rem;
+      transition: background-color 0.3s ease;
+    }
+
+    .material-btn:hover {
+      background-color: rgba(0, 0, 0, 0.05);
+    }
+
+    .sidebar-nav {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.25rem;
+    }
+
+    .sidebar-bottom {
+      padding: 0.25rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
     #window-controls {
       position: fixed;
       top: 0;
@@ -17,125 +105,126 @@
       padding: 8px;
       z-index: 1000;
     }
-    #close-btn {
-      background: #ef4444;
-      color: white;
-      border-radius: 50%;
-      width: 24px;
-      height: 24px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: background 0.2s;
+
+    .page-title {
+      color: #1a237e;
+      font-size: 1rem;
+      font-weight: 500;
+      margin-bottom: 1rem;
     }
-    #close-btn:hover {
-      background: #dc2626;
+
+    .two-col-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.25rem;
+      margin-bottom: 0.5rem;
     }
   </style>
 </head>
-<body class="bg-gray-100">
-  <div id="window-controls">
-    <div id="close-btn">
-      <i class="bi bi-x"></i>
-    </div>
-  </div>
-  <div class="flex">
+<body>
+  <div id="app-container">
     <!-- Sidebar -->
-    <div class="w-16 bg-gray-800 text-white p-1 flex flex-col justify-between">
-      <div>
-        <h2 class="text-sm font-bold mb-2">Services</h2>
+    <div class="sidebar">
+      <div class="sidebar-nav">
         <ul class="space-y-1">
           <li>
             <button class="w-full p-1 rounded hover:bg-gray-700 service-btn flex items-center justify-center"
-                    data-service="vscode"
-                    title="VS Code">
-              <i class="bi bi-code-square text-lg"></i>
+              data-service="vscode" title="VS Code">
+              <i class="bi bi-code-square text-lg text-white"></i>
             </button>
           </li>
           <li>
             <button class="w-full p-1 rounded hover:bg-gray-700 service-btn flex items-center justify-center"
-                    data-service="ssh"
-                    title="SSH">
-              <i class="bi bi-terminal text-lg"></i>
+              data-service="ssh" title="SSH">
+              <i class="bi bi-terminal text-lg text-white"></i>
             </button>
           </li>
           <li>
             <button class="w-full p-1 rounded hover:bg-gray-700 service-btn flex items-center justify-center"
-                    data-service="rdp"
-                    title="RDP">
-              <i class="bi bi-display text-lg"></i>
+              data-service="rdp" title="RDP">
+              <i class="bi bi-display text-lg text-white"></i>
             </button>
           </li>
           <li>
             <button class="w-full p-1 rounded hover:bg-gray-700 service-btn flex items-center justify-center"
-                    data-service="fm"
-                    title="FM UI">
-              <i class="bi bi-hdd-network text-lg"></i>
+              data-service="fm" title="FM UI">
+              <i class="bi bi-hdd-network text-lg text-white"></i>
+            </button>
+          </li>
+          <li>
+            <button class="w-full p-1 rounded hover:bg-gray-700 service-btn flex items-center justify-center"
+              data-service="refresh" title="Refresh">
+              <i class="bi bi-arrow-repeat text-lg text-white"></i>
             </button>
           </li>
         </ul>
       </div>
-      <div class="mb-2">
+      <div class="sidebar-bottom">
         <button id="about-btn" class="w-full p-1 rounded hover:bg-gray-700 flex items-center justify-center"
-                title="About">
-          <i class="bi bi-info-circle text-lg"></i>
+          title="About">
+          <i class="bi bi-info-circle text-lg text-white"></i>
         </button>
       </div>
       <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
     </div>
 
     <!-- Main Content -->
-    <div class="flex-1 container mx-auto p-2">
-      <h1 class="text-xl font-bold mb-2">CXL Remote Development</h1>
-      
-      <div class="grid grid-cols-1 gap-2">
+    <div class="main-content">
+      <!-- Two Column Layout -->
+      <div class="two-col-grid">
         <!-- Container Selection -->
-        <div class="bg-white p-2 rounded shadow">
-          <h2 class="text-lg font-semibold mb-2">Select Container</h2>
-          <div class="flex gap-1 items-center">
-            <select id="container-select" class="w-full p-1 border rounded">
-              <option value="">Select a container</option>
-            </select>
-            <div class="flex gap-1">
-              <button id="create-btn" class="btn-action p-1 rounded hover:bg-green-100" title="Create Container">
-                <i class="bi bi-plus-circle text-green-600"></i>
-              </button>
-              <button id="start-btn" class="btn-action p-1 rounded hover:bg-green-100" title="Start Container">
-                <i class="bi bi-play-circle text-green-600"></i>
-              </button>
-              <button id="stop-btn" class="btn-action p-1 rounded hover:bg-red-100" title="Stop Container">
-                <i class="bi bi-stop-circle text-red-600"></i>
-              </button>
-              <button id="restart-btn" class="btn-action p-1 rounded hover:bg-yellow-100" title="Restart Container">
-                <i class="bi bi-arrow-repeat text-yellow-600"></i>
-              </button>
-              <button id="remove-btn" class="btn-action p-1 rounded hover:bg-gray-100" title="Remove Container">
-                <i class="bi bi-trash text-gray-600"></i>
-              </button>
+        <div class="material-card">
+          <div class="card-header">
+            <h2 class="text-lg font-medium text-gray-800">Instance</h2>
+          </div>
+          <div class="card-content">
+            <div class="flex gap items-center">
+              <select id="container-select" class="material-select flex-1">
+                <option value="">container</option>
+              </select>
+              <div class="flex">
+                <button id="create-btn" class="material-btn text-green-600" title="Create ">
+                  <i class="bi bi-plus-circle text"></i>
+                </button>
+                <button id="start-btn" class="material-btn text-green-600" title="Start ">
+                  <i class="bi bi-play-circle text"></i>
+                </button>
+                <button id="stop-btn" class="material-btn text-red-600" title="Stop ">
+                  <i class="bi bi-stop-circle text"></i>
+                </button>
+                <button id="restart-btn" class="material-btn text-yellow-600" title="Restart ">
+                  <i class="bi bi-arrow-repeat text"></i>
+                </button>
+                <button id="remove-btn" class="material-btn text-gray-600" title="Remove ">
+                  <i class="bi bi-trash text"></i>
+                </button>
+              </div>
             </div>
           </div>
         </div>
-        
-        <!-- Container Info Section -->
-        <div class="bg-white p-2 rounded shadow">
-          <h2 class="text-lg font-semibold mb-2">Container Information</h2>
-          <div id="container-info"></div>
-        </div>
 
-        <!-- Service Info Section -->
-        <div class="bg-white p-2 rounded shadow hidden" id="service-info">
-          <h2 class="text-lg font-semibold mb-2" id="service-title"></h2>
+        <!-- Container Info Section -->
+        <div class="material-card">
+          <div class="card-header">
+            <h2 class="text-lg font-medium text-gray-800">Usage</h2>
+          </div>
+          <div class="card-content">
+            <div id="container-info"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Service Info Section -->
+      <div class="material-card hidden" id="service-info">
+        <div class="card-header">
+          <h2 class="text-lg font-medium text-gray-800" id="service-title"></h2>
+        </div>
+        <div class="card-content">
           <div id="service-content"></div>
         </div>
       </div>
     </div>
   </div>
-
-    </div>
-
-  </div>
-
   <script src="renderer.js"></script>
   <script src="https://cdn.plot.ly/plotly-2.20.0.min.js"></script>
 </body>

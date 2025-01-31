@@ -50,3 +50,4 @@ __pycache__
 *.gz
 
 node_modules
+dist

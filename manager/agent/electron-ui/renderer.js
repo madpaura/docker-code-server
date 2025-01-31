@@ -12,19 +12,73 @@ const serviceButtons = document.querySelectorAll('.service-btn')
 const serviceInfoSection = document.getElementById('service-info')
 const serviceTitle = document.getElementById('service-title')
 const serviceContent = document.getElementById('service-content')
-const closeBtn = document.getElementById('close-btn')
-
-// Handle close button click
-if (closeBtn) {
-  closeBtn.addEventListener('click', () => {
-    window.electronAPI.closeApp()
-  })
-}
 
 let currentContainerId = null
 let refreshInterval = null
+let containerState = {
+  exists: false,
+  running: false
+}
 const containerSelect = document.getElementById('container-select')
+const createButton = document.getElementById('create-btn')
+const startStopButton = document.getElementById('start-btn')
+const removeButton = document.getElementById('remove-btn')
 
+const updateButtonStates = () => {
+  console.log('Updating button states:', containerState)
+
+  try {
+    // Show/hide create button
+    createButton.style.display = containerState.exists ? 'none' : 'block'
+    createButton.disabled = containerState.exists
+
+    // Show/hide action buttons based on container existence
+    const actionButtons = document.querySelectorAll('.btn-action')
+    actionButtons.forEach(btn => {
+      btn.style.display = containerState.exists ? 'block' : 'none'
+    })
+
+    // Update start/stop button
+    if (containerState.exists) {
+      startStopButton.disabled = false
+      startStopButton.innerHTML = containerState.running ?
+        '<i class="bi bi-stop-circle text-red-600"></i>' :
+        '<i class="bi bi-play-circle text-green-600"></i>'
+      startStopButton.title = containerState.running ? 'Stop Container' : 'Start Container'
+    }
+
+    // Update remove button state
+    removeButton.disabled = !containerState.exists || containerState.running
+
+    // Update restart button state
+    const restartButton = document.getElementById('restart-btn')
+    if (restartButton) {
+      restartButton.disabled = !containerState.exists || !containerState.running
+    }
+  } catch (error) {
+    console.error('Error updating button states:', error)
+  }
+}
+
+// Add periodic state refresh
+const refreshContainerState = async () => {
+  try {
+    const container_name = await getContainerName('vishwa')
+    const response = await window.electronAPI.getContainerInfo(container_name)
+
+    if (response && response.container) {
+      const containers = Array.isArray(response.container) ? response.container : [response.container]
+      containerState.exists = containers.length > 0
+      containerState.running = containers.some(c => c.State === 'running')
+      updateButtonStates()
+    }
+  } catch (error) {
+    console.error('Error refreshing container state:', error)
+  }
+}
+
+// Initialize periodic refresh
+let stateRefreshInterval = null
 
 // Fetch available containers
 const fetchContainers = async () => {
@@ -49,6 +103,11 @@ const fetchContainers = async () => {
         return `<option value="${container.id}">${container.name}</option>`
       })
       .join('')
+
+    // Update container state
+    containerState.exists = containers.length > 0
+    containerState.running = containers.some(c => c.State === 'running')
+    updateButtonStates()
   } catch (error) {
     console.error('Error fetching containers:', error)
   }
@@ -62,23 +121,6 @@ containerSelect.addEventListener('change', (e) => {
   updateServiceConnections()
   refreshInterval = setInterval(updateStats, 5000)
 })
-
-// Initialize Plotly gauges
-const createGauge = (value, title, color = 'royalblue') => {
-  return {
-    value: value,
-    title: { text: title },
-    gauge: {
-      axis: { range: [0, 100] },
-      bar: { color },
-      steps: [
-        { range: [0, 50], color: 'lightgreen' },
-        { range: [50, 80], color: 'orange' },
-        { range: [80, 100], color: 'orangered' }
-      ]
-    }
-  }
-}
 
 // Update container stats
 const updateStats = async () => {
@@ -114,49 +156,83 @@ const updateStats = async () => {
     }
 
     containerInfo.innerHTML = `
-      <style>
-        .progress-container {
-          margin: 5px 0;
-        }
-        .progress-label {
-          font-size: 12px;
-          margin-bottom: 2px;
-        }
-        .progress-bar {
-          height: 15px;
-          background-color: #e0e0e0;
-          border-radius: 8px;
-          overflow: hidden;
-          position: relative;
-        }
-        .progress {
-          height: 100%;
-          background-color: #007bff;
-          transition: width 0.3s ease;
-          text-align: right;
-          padding-right: 3px;
-          color: white;
-          font-size: 10px;
-          line-height: 15px;
-        }
-      </style>
-      <div class="space-y-2">
-        <div class="progress-container">
-          <div class="progress-label">CPU Usage</div>
-          <div class="progress-bar">
-            <div id="cpu-progress" class="progress" style="width: ${cpuUsage}%">${cpuUsage.toFixed(1)}%</div>
-          </div>
+    <style>
+      .metrics-container {
+        padding: 0.5rem 0;
+      }
+      
+      .metric-item {
+        margin-bottom: 1.5rem;
+      }
+      
+      .progress-label {
+        color: rgba(0, 0, 0, 0.87);
+        font-size: 0.875rem;
+        font-weight: 500;
+        margin-bottom: 0.5rem;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+      }
+      
+      .progress-label span {
+        color: rgba(0, 0, 0, 0.6);
+        font-size: 0.75rem;
+      }
+      
+      .progress-track {
+        height: 4px;
+        background-color: rgba(0, 0, 0, 0.08);
+        border-radius: 2px;
+        overflow: hidden;
+        position: relative;
+      }
+      
+      .progress-bar {
+        height: 100%;
+        background-color: #1976d2;
+        position: absolute;
+        top: 0;
+        left: 0;
+        transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+      
+      .memory-stats {
+        display: flex;
+        justify-content: space-between;
+        margin-top: 2rem;
+        color: rgba(0, 0, 0, 0.6);
+        font-size: 0.875rem;
+      }
+    </style>
+    
+    <div class="metrics-container">
+      <div class="metric-item">
+        <div class="progress-label">
+          CPU Usage
+          <span>${cpuUsage.toFixed(1)}%</span>
         </div>
-        <div class="progress-container">
-          <div class="progress-label">Memory Usage</div>
-          <div class="progress-bar">
-            <div id="memory-progress" class="progress" style="width: ${memoryUsage}%">${memoryUsage.toFixed(1)}%</div>
-          </div>
+        <div class="progress-track">
+          <div class="progress-bar" style="width: ${cpuUsage}%"></div>
         </div>
-        <div>Memory Used: ${memoryUsed.toFixed(2)} MB</div>
-        <div>Memory Limit: ${memoryLimit.toFixed(2)} MB</div>
       </div>
-    `
+      
+      <div class="metric-item">
+        <div class="progress-label">
+          Memory Usage
+          <span>${memoryUsage.toFixed(1)}%</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-bar" style="width: ${memoryUsage}%"></div>
+        </div>
+      </div>
+      
+      <div class="memory-stats">
+        <div>Used: ${memoryUsed.toFixed(2)} MB</div>
+        <div>Total: ${memoryLimit.toFixed(2)} MB</div>
+      </div>
+    </div>
+  `
   } catch (error) {
     console.error('Error updating stats:', error)
   }
@@ -176,19 +252,52 @@ const showAbout = () => {
 // Handle container actions
 const handleContainerAction = async (action) => {
   try {
-    if (action == 'create') {
+    if (action === 'create') {
       const response = await window.electronAPI.containerCreate('vishwa')
-
       if (response.success) {
         alert(`Container created successfully: ${response.container.name}`)
+        containerState.exists = true
+        containerState.running = false
         await fetchContainers()
       }
     } else {
+      const wasRunning = containerState.running
       await window.electronAPI.containerAction(action, currentContainerId)
-      updateStats()
+
+      // Update state based on action
+      if (action === 'start') {
+        containerState.running = true
+        updateStats()
+      } else if (action === 'stop') {
+        containerState.running = false
+        updateStats()
+      } else if (action === 'remove') {
+        containerState.exists = false
+        containerState.running = false
+      }
+
+      // Provide user feedback
+      const actionMap = {
+        start: { success: 'Container started successfully', error: 'Failed to start container' },
+        stop: { success: 'Container stopped successfully', error: 'Failed to stop container' },
+        remove: { success: 'Container removed successfully', error: 'Failed to remove container' }
+      }
+
+      if (action !== 'remove') {
+        const success = containerState.running === (action === 'start')
+        const message = success ? actionMap[action].success : actionMap[action].error
+        alert(message)
+      }
+
+      updateButtonStates()
     }
   } catch (error) {
     console.error(`Error performing ${action}:`, error)
+    // Reset state if action fails
+    if (action === 'start' || action === 'stop') {
+      containerState.running = wasRunning
+    }
+    alert(`Error: ${error.message}`)
   }
 }
 
@@ -234,6 +343,9 @@ const init = async () => {
     createForm.addEventListener('submit', handleCreateContainer)
   }
 
+  // Initialize buttons
+  updateButtonStates()
+
   // Fetch available containers
   await fetchContainers()
 
@@ -243,11 +355,17 @@ const init = async () => {
     updateStats()
     refreshInterval = setInterval(updateStats, 75000)
   }
+
+  refreshContainerState()
+
+  // Start state refresh
+  // stateRefreshInterval = setInterval(refreshContainerState, 10000)
 }
 
-// Cleanup on window close
+// Cleanup intervals on window close
 window.addEventListener('beforeunload', () => {
   clearInterval(refreshInterval)
+  clearInterval(stateRefreshInterval)
 })
 
 // Handle service navigation
@@ -272,16 +390,16 @@ window.electronAPI.on('service-action', (service) => {
 const handleSSHConnect = async () => {
   const status = document.getElementById('ssh-status')
   if (!status) return
-  
+
   status.classList.remove('bg-red-100', 'text-red-700')
   status.classList.remove('bg-green-100', 'text-green-700')
   status.classList.add('bg-blue-100', 'text-blue-700')
   status.textContent = 'Connecting via SSH...'
-  
+
   const host = '127.0.0.1'
   const port = 22
   const username = 'root'
-  
+
   try {
     await window.electronAPI.sshConnect({ username, host, port })
     status.classList.add('bg-green-100', 'text-green-700')
@@ -294,8 +412,8 @@ const handleSSHConnect = async () => {
 
 const showServiceInfo = (service) => {
   serviceInfoSection.classList.remove('hidden')
-  
-  switch(service) {
+
+  switch (service) {
     case 'vscode':
       serviceTitle.textContent = 'VS Code Access'
       serviceContent.innerHTML = `
@@ -305,7 +423,7 @@ const showServiceInfo = (service) => {
         </div>
       `
       break
-      
+
     case 'ssh':
       serviceTitle.textContent = 'SSH Access'
       serviceContent.innerHTML = `
@@ -328,7 +446,7 @@ const showServiceInfo = (service) => {
       `
       handleSSHConnect()
       break
-      
+
     case 'rdp':
       serviceTitle.textContent = 'RDP Access'
       serviceContent.innerHTML = `
@@ -338,7 +456,7 @@ const showServiceInfo = (service) => {
         </div>
       `
       break
-      
+
     case 'fm':
       serviceTitle.textContent = 'FM UI Access'
       serviceContent.innerHTML = `
@@ -348,6 +466,17 @@ const showServiceInfo = (service) => {
         </div>
       `
       break
+
+    case 'refresh':
+      serviceTitle.textContent = 'Refresh'
+      serviceContent.innerHTML = `
+        <div class="mb-2">Refreshing container information...</div>
+      `
+      // Clear current container and refresh
+      currentContainerId = null
+      containerSelect.value = ''
+      fetchContainers()
+      break
   }
 
   // Update connection info when container changes
@@ -356,19 +485,21 @@ const showServiceInfo = (service) => {
 
 const updateServiceConnections = () => {
   if (!currentContainerId) return
-  
+
   // Get container IP and ports from electron API
   window.electronAPI.getContainerInfo(currentContainerId)
     .then(info => {
       const ip = info.container.NetworkSettings.IPAddress
-      const ports = {
-        vscode: info.container.Ports.find(p => p.PrivatePort === 8080).PublicPort,
-        ssh: info.container.Ports.find(p => p.PrivatePort === 22).PublicPort,
-        rdp: info.container.Ports.find(p => p.PrivatePort === 3389).PublicPort,
-        fm: info.container.Ports.find(p => p.PrivatePort === 3000).PublicPort
-      }
+      const getPort = (privatePort) =>
+        info.container.Ports.find(p => p.PrivatePort === privatePort)?.PublicPort || 'N/A'
 
       // Update service URLs/commands
+      const ports = {
+        vscode: getPort(8080),
+        ssh: getPort(22),
+        rdp: getPort(3389),
+        fm: getPort(3000)
+      }
       if (document.getElementById('vscode-url')) {
         document.getElementById('vscode-url').textContent = `http://${ip}:${ports.vscode}`
       }
