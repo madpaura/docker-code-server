@@ -26,12 +26,15 @@ let redirectAgent = {
 let portInfo = null
 
 const loadingOverlay = document.getElementById('loading-overlay')
+const loadingText = document.getElementById('loading-text')
 
-const showLoading = () => {
+const showLoading = (text = 'Loading...') => {
+  loadingText.textContent = text
   loadingOverlay.classList.add('active')
 }
 
 const hideLoading = () => {
+  loadingText.textContent = ''
   loadingOverlay.classList.remove('active')
 }
 
