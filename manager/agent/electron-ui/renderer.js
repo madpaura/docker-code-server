@@ -7,7 +7,7 @@ const getContainerName = async (username) => {
 const cpuGauge = document.getElementById('cpu-gauge')
 const memoryGauge = document.getElementById('memory-gauge')
 const containerInfo = document.getElementById('container-info')
-const actionButtons = document.querySelectorAll('.btn-action')
+const actionButtons = document.querySelectorAll('#create-btn, #start-btn, #stop-btn, #restart-btn, #remove-btn')
 const serviceButtons = document.querySelectorAll('.service-btn')
 const serviceInfoSection = document.getElementById('service-info')
 const serviceTitle = document.getElementById('service-title')
@@ -19,63 +19,72 @@ let containerState = {
   exists: false,
   running: false
 }
+let redirectAgent = {
+  ip: null,
+  port: null
+}
+let portInfo = null
+
+const loadingOverlay = document.getElementById('loading-overlay')
+
+const showLoading = () => {
+  loadingOverlay.classList.add('active')
+}
+
+const hideLoading = () => {
+  loadingOverlay.classList.remove('active')
+}
+
 const containerSelect = document.getElementById('container-select')
 const createButton = document.getElementById('create-btn')
-const startStopButton = document.getElementById('start-btn')
+const startButton = document.getElementById('start-btn')
+const stopButton = document.getElementById('stop-btn')
 const removeButton = document.getElementById('remove-btn')
 
 const updateButtonStates = () => {
   console.log('Updating button states:', containerState)
 
   try {
-    // Show/hide create button
-    createButton.style.display = containerState.exists ? 'none' : 'block'
-    createButton.disabled = containerState.exists
+    // When container is not available, only create button should be active
+    if (!containerState.exists) {
+      createButton.style.display = 'block'
+      createButton.disabled = false
 
-    // Show/hide action buttons based on container existence
-    const actionButtons = document.querySelectorAll('.btn-action')
-    actionButtons.forEach(btn => {
-      btn.style.display = containerState.exists ? 'block' : 'none'
-    })
-
-    // Update start/stop button
-    if (containerState.exists) {
-      startStopButton.disabled = false
-      startStopButton.innerHTML = containerState.running ?
-        '<i class="bi bi-stop-circle text-red-600"></i>' :
-        '<i class="bi bi-play-circle text-green-600"></i>'
-      startStopButton.title = containerState.running ? 'Stop Container' : 'Start Container'
+      // Hide all other action buttons
+      const actionButtons = document.querySelectorAll('#start-btn, #stop-btn, #restart-btn, #remove-btn')
+      actionButtons.forEach(btn => {
+        btn.style.display = 'none'
+        btn.disabled = true
+      })
+      return
     }
 
-    // Update remove button state
-    removeButton.disabled = !containerState.exists || containerState.running
+    // When container exists
+    createButton.style.display = 'none'
+    createButton.disabled = true
 
-    // Update restart button state
-    const restartButton = document.getElementById('restart-btn')
-    if (restartButton) {
-      restartButton.disabled = !containerState.exists || !containerState.running
+    // Show all action buttons
+    const actionButtons = document.querySelectorAll('#start-btn, #stop-btn, #restart-btn, #remove-btn')
+    actionButtons.forEach(btn => {
+      btn.style.display = 'block'
+      btn.disabled = false
+    })
+
+    // Update button states based on container running state
+    if (containerState.running) {
+      startButton.disabled = true
+      stopButton.disabled = false
+      removeButton.disabled = true // Can't remove while running
+    } else {
+      startButton.disabled = false
+      stopButton.disabled = true
+      removeButton.disabled = true // Can remove when stopped
     }
   } catch (error) {
     console.error('Error updating button states:', error)
   }
 }
 
-// Add periodic state refresh
-const refreshContainerState = async () => {
-  try {
-    const container_name = await getContainerName('vishwa')
-    const response = await window.electronAPI.getContainerInfo(container_name)
-
-    if (response && response.container) {
-      const containers = Array.isArray(response.container) ? response.container : [response.container]
-      containerState.exists = containers.length > 0
-      containerState.running = containers.some(c => c.State === 'running')
-      updateButtonStates()
-    }
-  } catch (error) {
-    console.error('Error refreshing container state:', error)
-  }
-}
 
 // Initialize periodic refresh
 let stateRefreshInterval = null
@@ -95,32 +104,34 @@ const fetchContainers = async () => {
 
     console.log(containers)
 
-    containerSelect.innerHTML = containers
-      .map(container => {
-        // Extract username from container name (format: code-server-username-hash)
-        const nameParts = container.name.split('-')
-        const username = nameParts.length >= 3 ? nameParts[2] : 'unknown'
-        return `<option value="${container.id}">${container.name}</option>`
-      })
-      .join('')
+    // Set the first container as selected and update the h2 text
+    if (containers.length > 0) {
+      const container = containers[0]
+      containerSelect.textContent = container.name
+      currentContainerId = container.id
 
-    // Update container state
-    containerState.exists = containers.length > 0
-    containerState.running = containers.some(c => c.State === 'running')
+      // Update container state
+      containerState.exists = true
+      containerState.running = container.status === 'running'
+
+      // Start stats updates
+      updateStats()
+      if (refreshInterval)
+         clearInterval(refreshInterval)
+
+      refreshInterval = setInterval(updateStats, 50000)
+    } else {
+      containerSelect.textContent = 'No container selected'
+      currentContainerId = null
+      containerState.exists = false
+      containerState.running = false
+    }
+
     updateButtonStates()
   } catch (error) {
     console.error('Error fetching containers:', error)
   }
 }
-
-// Handle container selection change
-containerSelect.addEventListener('change', (e) => {
-  currentContainerId = e.target.value
-  if (refreshInterval) clearInterval(refreshInterval)
-  updateStats()
-  updateServiceConnections()
-  refreshInterval = setInterval(updateStats, 5000)
-})
 
 // Update container stats
 const updateStats = async () => {
@@ -238,6 +249,48 @@ const updateStats = async () => {
   }
 }
 
+// Add port information to container info section
+const updatePortInfo = async () => {
+  if (!currentContainerId || !containerState.exists) return;
+
+  try {
+    // const container_name = await getContainerName('vishwa')
+    // const portInfo = await window.electronAPI.getContainerPorts('vishwa');
+    const portInfoHtml = `
+      <div class="space-y-2">
+        <div class="flex items-center justify-between p-2 bg-gray-50 rounded">
+          <span class="font-medium">Code Server</span>
+          <span class="text-blue-600">${portInfo.code_port}</span>
+        </div>
+        <div class="flex items-center justify-between p-2 bg-gray-50 rounded">
+          <span class="font-medium">SSH</span>
+          <span class="text-blue-600">${portInfo.ssh_port}</span>
+        </div>
+        <div class="flex items-center justify-between p-2 bg-gray-50 rounded">
+          <span class="font-medium">SPICE</span>
+          <span class="text-blue-600">${portInfo.spice_port}</span>
+        </div>
+        <div class="flex items-center justify-between p-2 bg-gray-50 rounded">
+          <span class="font-medium">File Manager UI</span>
+          <span class="text-blue-600">${portInfo.fm_ui_port}</span>
+        </div>
+        <div class="flex items-center justify-between p-2 bg-gray-50 rounded">
+          <span class="font-medium">File Manager</span>
+          <span class="text-blue-600">${portInfo.fm_port}</span>
+        </div>
+      </div>
+    `;
+
+    // Update modal content
+    const modalPortInfo = document.getElementById('modal-port-info');
+    if (modalPortInfo) {
+      modalPortInfo.innerHTML = portInfoHtml;
+    }
+  } catch (error) {
+    console.error('Error fetching port information:', error);
+  }
+};
+
 // Show about information
 const showAbout = () => {
   serviceInfoSection.classList.remove('hidden')
@@ -251,60 +304,99 @@ const showAbout = () => {
 
 // Handle container actions
 const handleContainerAction = async (action) => {
+  if (!currentContainerId && action !== 'create') return
+
   try {
-    if (action === 'create') {
-      const response = await window.electronAPI.containerCreate('vishwa')
-      if (response.success) {
-        alert(`Container created successfully: ${response.container.name}`)
-        containerState.exists = true
-        containerState.running = false
-        await fetchContainers()
-      }
-    } else {
-      const wasRunning = containerState.running
-      await window.electronAPI.containerAction(action, currentContainerId)
-
-      // Update state based on action
-      if (action === 'start') {
-        containerState.running = true
-        updateStats()
-      } else if (action === 'stop') {
-        containerState.running = false
-        updateStats()
-      } else if (action === 'remove') {
-        containerState.exists = false
-        containerState.running = false
-      }
-
-      // Provide user feedback
-      const actionMap = {
-        start: { success: 'Container started successfully', error: 'Failed to start container' },
-        stop: { success: 'Container stopped successfully', error: 'Failed to stop container' },
-        remove: { success: 'Container removed successfully', error: 'Failed to remove container' }
-      }
-
-      if (action !== 'remove') {
-        const success = containerState.running === (action === 'start')
-        const message = success ? actionMap[action].success : actionMap[action].error
-        alert(message)
-      }
-
-      updateButtonStates()
-    }
+    showLoading()
+    await window.electronAPI.containerAction(action, currentContainerId)
+    
+    // Refresh container state after action
+    await fetchContainers()
+    await refreshContainerState()
   } catch (error) {
-    console.error(`Error performing ${action}:`, error)
-    // Reset state if action fails
-    if (action === 'start' || action === 'stop') {
-      containerState.running = wasRunning
+    console.error(`Error performing container action ${action}:`, error)
+  } finally {
+    hideLoading()
+  }
+}
+
+// Handle create container form submission
+const handleCreateContainer = async (e) => {
+  e.preventDefault()
+  
+  try {
+    showLoading()
+    const userInfo = await getUserInfo()
+    await window.electronAPI.containerCreate(userInfo.username, userInfo.sessionToken)
+    
+    // Refresh container list after creation
+    await fetchContainers()
+  } catch (error) {
+    console.error('Error creating container:', error)
+  } finally {
+    hideLoading()
+  }
+}
+
+// Handle logout
+const handleLogout = async () => {
+  try {
+    showLoading()
+    
+    // Stop any running intervals
+    if (refreshInterval) {
+      clearInterval(refreshInterval)
+      refreshInterval = null
     }
-    alert(`Error: ${error.message}`)
+    if (stateRefreshInterval) {
+      clearInterval(stateRefreshInterval)
+      stateRefreshInterval = null
+    }
+
+    // Reset container state
+    containerState = {
+      exists: false,
+      running: false
+    }
+    currentContainerId = null
+    portInfo = null
+    redirectAgent = {
+      ip: null,
+      port: null
+    }
+
+    // Clear session
+    const userInfo = await getUserInfo()
+    if (userInfo) {
+      await window.electronAPI.logout(userInfo.userId)
+    }
+    clearSession()
+
+    // Reset UI
+    containerSelect.textContent = 'No container selected'
+    serviceInfoSection.classList.add('hidden')
+    updateButtonStates()
+
+    // Show login screen
+    document.getElementById('app-container').classList.add('hidden')
+    document.getElementById('login-container').classList.remove('hidden')
+  } catch (error) {
+    console.error('Error during logout:', error)
+  } finally {
+    hideLoading()
   }
 }
 
 // Setup event listeners
 const aboutButton = document.getElementById('about-btn')
+const logoutButton = document.getElementById('logout-btn')
+
 if (aboutButton) {
   aboutButton.addEventListener('click', showAbout)
+}
+
+if (logoutButton) {
+  logoutButton.addEventListener('click', handleLogout)
 }
 
 actionButtons.forEach(button => {
@@ -314,44 +406,84 @@ actionButtons.forEach(button => {
   })
 })
 
-// Handle create container form submission
-const handleCreateContainer = async (e) => {
-  e.preventDefault()
+// Auth-related functions
+const loginForm = document.getElementById('login-form')
+const loginError = document.getElementById('login-error')
+const loginContainer = document.getElementById('login-container')
+const appContainer = document.getElementById('app-container')
+
+// Session management
+const saveSession = (userData) => {
+  localStorage.setItem('user', JSON.stringify(userData))
+}
+
+const clearSession = () => {
+  localStorage.removeItem('user')
+}
+
+const getSession = () => {
+  const userData = localStorage.getItem('user')
+  return userData ? JSON.parse(userData) : null
+}
+
+const validateSession = async () => {
+  const userData = getSession()
+  if (!userData) return false
 
   try {
-    const response = await window.electronAPI.createContainer({
-      username: 'vishwa',
-    })
+    const response = await window.electronAPI.validateSession(userData.id, userData.session_token)
+    return response.valid
+  } catch (error) {
+    console.error('Session validation failed:', error)
+    return false
+  }
+}
 
+const getUserInfo = async () => {
+  try {
+    const userData = getSession()
+    if (!userData) return false
+
+    const response = await window.electronAPI.getUserInfo(userData.id, userData.session_token)
+    return response
+  } catch (error) {
+    console.error('Invalid user info:', error)
+    return false
+  }
+}
+
+const handleLogin = async (e) => {
+  e.preventDefault()
+  loginError.classList.add('hidden')
+
+  const username = document.getElementById('username').value
+  const password = document.getElementById('password').value
+
+  try {
+    const response = await window.electronAPI.login(username, password)
     if (response.success) {
-      alert(`Container created successfully: ${response.container.name}`)
-      await fetchContainers()
+      saveSession(response.user)
+      loginContainer.classList.add('hidden')
+      appContainer.classList.remove('hidden')
+      await initApp()
     } else {
-      throw new Error(response.error || 'Failed to create container')
+      loginError.textContent = response.error || 'Login failed'
+      loginError.classList.remove('hidden')
     }
   } catch (error) {
-    alert(`Error creating container: ${error.message}`)
-    console.error('Create container error:', error)
+    loginError.textContent = error.message || 'Login failed'
+    loginError.classList.remove('hidden')
   }
 }
 
 // Initialize app
-const init = async () => {
-  // Setup create container form
-  const createForm = document.getElementById('create-container-form')
-  if (createForm) {
-    createForm.addEventListener('submit', handleCreateContainer)
-  }
-
-  // Initialize buttons
-  updateButtonStates()
+const initApp = async () => {
 
   // Fetch available containers
   await fetchContainers()
 
   // Set initial container if available
-  if (containerSelect.options.length > 0) {
-    currentContainerId = containerSelect.value
+  if (containerState.exists) {
     updateStats()
     refreshInterval = setInterval(updateStats, 75000)
   }
@@ -369,9 +501,39 @@ window.addEventListener('beforeunload', () => {
 })
 
 // Handle service navigation
+const openVSCodeInBrowser = () => {
+  if (containerState.exists && containerState.running && redirectAgent.ip && portInfo?.code_port) {
+    const url = `http://${redirectAgent.ip}:${portInfo.code_port}`;
+    window.electronAPI.openExternal(url);
+  }
+};
+
+const launchFMUI = () => {
+  if (containerState.exists && containerState.running && redirectAgent.ip && portInfo?.fm_ui_port) {
+    const url = `http://${redirectAgent.ip}:${portInfo.fm_ui_port}`;
+    window.electronAPI.openExternal(url);
+  }
+};
+
+
+// Function to launch remote viewer
+const launchRemoteViewer = () => {
+  if (containerState.exists && containerState.running && redirectAgent.ip && portInfo?.spice_port) {
+    window.electronAPI.launchRemoteViewer(redirectAgent.ip, portInfo.spice_port)
+      .catch(error => console.error('Failed to launch remote-viewer:', error));
+  }
+};
+
 serviceButtons.forEach(button => {
   button.addEventListener('click', () => {
-    const service = button.dataset.service
+    const service = button.getAttribute('data-service')
+    if (service === 'vscode') {
+      openVSCodeInBrowser();
+    } else if (service === 'rdp') {
+      launchRemoteViewer();
+    } else if (service === 'fm') {
+      launchFMUI();
+    }
     showServiceInfo(service)
   })
 })
@@ -388,29 +550,16 @@ window.electronAPI.on('service-action', (service) => {
 
 // Handle SSH connection form submission
 const handleSSHConnect = async () => {
-  const status = document.getElementById('ssh-status')
-  if (!status) return
-
-  status.classList.remove('bg-red-100', 'text-red-700')
-  status.classList.remove('bg-green-100', 'text-green-700')
-  status.classList.add('bg-blue-100', 'text-blue-700')
-  status.textContent = 'Connecting via SSH...'
-
-  const host = '127.0.0.1'
-  const port = 22
+  const host = redirectAgent.ip
+  const port = portInfo.ssh_port
   const username = 'root'
-
-  try {
-    await window.electronAPI.sshConnect({ username, host, port })
-    status.classList.add('bg-green-100', 'text-green-700')
-    status.textContent = 'Connection successful!'
-  } catch (error) {
-    status.classList.add('bg-red-100', 'text-red-700')
-    status.textContent = `Connection failed: ${error.message}`
-  }
+  await window.electronAPI.sshConnect(username, host, port)
 }
 
 const showServiceInfo = (service) => {
+  console.log(containerState)
+  if (!containerState.exists || !containerState.running) return
+
   serviceInfoSection.classList.remove('hidden')
 
   switch (service) {
@@ -418,30 +567,30 @@ const showServiceInfo = (service) => {
       serviceTitle.textContent = 'VS Code Access'
       serviceContent.innerHTML = `
         <div class="mb-2">Use the following URL to access VS Code:</div>
-        <div class="bg-gray-100 p-2 rounded">
-          <code id="vscode-url"></code>
+        <div class="bg-gray-100 p-2 rounded cursor-pointer hover:bg-gray-200 transition-colors">
+          <code id="vscode-url">http://${redirectAgent.ip}:${portInfo.code_port}</code>
         </div>
       `
+      // Add click handler to open VS Code URL
+      const vscodeUrl = document.getElementById('vscode-url');
+      if (vscodeUrl) {
+        const url = `http://${redirectAgent.ip}:${portInfo.code_port}`;
+        vscodeUrl.parentElement.addEventListener('click', () => {
+          window.electronAPI.openExternal(url);
+        });
+      }
       break
 
     case 'ssh':
       serviceTitle.textContent = 'SSH Access'
       serviceContent.innerHTML = `
-        <div class="space-y-4">
+        <div class="space-y-2">
           <div>
             <div class="mb-2">Use the following command to connect via SSH:</div>
             <div class="bg-gray-100 p-2 rounded">
-              <code id="ssh-command"></code>
+              <code id="ssh-command">ssh -p ${portInfo.ssh_port} root@${redirectAgent.ip}</code>
             </div>
           </div>
-          
-          <div class="border-t pt-4">
-            <div id="ssh-status" class="mt-4 p-3 rounded-md bg-blue-100 text-blue-700">
-              Connecting via SSH...
-            </div>
-          </div>
-          <script>
-          </script>
         </div>
       `
       handleSSHConnect()
@@ -451,10 +600,15 @@ const showServiceInfo = (service) => {
       serviceTitle.textContent = 'RDP Access'
       serviceContent.innerHTML = `
         <div class="mb-2">Use the following command to connect via RDP:</div>
-        <div class="bg-gray-100 p-2 rounded">
-          <code id="rdp-command"></code>
+        <div class="bg-gray-100 p-2 rounded cursor-pointer hover:bg-gray-200 transition-colors">
+          <code id="rdp-command">remote-viewer spice://${redirectAgent.ip}:${portInfo.spice_port}</code>
         </div>
       `
+      // Add click handler for RDP command
+      const rdpCommand = document.getElementById('rdp-command');
+      if (rdpCommand) {
+        rdpCommand.parentElement.addEventListener('click', launchRemoteViewer);
+      }
       break
 
     case 'fm':
@@ -462,58 +616,104 @@ const showServiceInfo = (service) => {
       serviceContent.innerHTML = `
         <div class="mb-2">Use the following URL to access FM UI:</div>
         <div class="bg-gray-100 p-2 rounded">
-          <code id="fm-url"></code>
+          <code id="fm-url"> http://${redirectAgent.ip}:${portInfo.fm_ui_port}</code>
         </div>
       `
       break
 
     case 'refresh':
-      serviceTitle.textContent = 'Refresh'
-      serviceContent.innerHTML = `
-        <div class="mb-2">Refreshing container information...</div>
-      `
-      // Clear current container and refresh
+      serviceInfoSection.classList.add('hidden')
+      serviceTitle.textContent = ''
+      serviceContent.innerHTML = ``
       currentContainerId = null
-      containerSelect.value = ''
+      containerSelect.textContent = 'No container selected'
       fetchContainers()
       break
   }
-
-  // Update connection info when container changes
-  updateServiceConnections()
 }
 
-const updateServiceConnections = () => {
-  if (!currentContainerId) return
+// Update the refreshContainerState function to include port info
+const refreshContainerState = async () => {
+  try {
+    const container_name = await getContainerName('vishwa')
+    const response = await window.electronAPI.getContainerInfo(container_name)
 
-  // Get container IP and ports from electron API
-  window.electronAPI.getContainerInfo(currentContainerId)
-    .then(info => {
-      const ip = info.container.NetworkSettings.IPAddress
-      const getPort = (privatePort) =>
-        info.container.Ports.find(p => p.PrivatePort === privatePort)?.PublicPort || 'N/A'
+    if (response && response.container) {
+      const containers = Array.isArray(response.container) ? response.container : [response.container]
+      containerState.exists = containers.length > 0
+      containerState.running = containers.some(c => c.status === 'running')
+      updateButtonStates()
+    }
+  } catch (error) {
+    console.error('Error refreshing container state:', error)
+  }
 
-      // Update service URLs/commands
-      const ports = {
-        vscode: getPort(8080),
-        ssh: getPort(22),
-        rdp: getPort(3389),
-        fm: getPort(3000)
-      }
-      if (document.getElementById('vscode-url')) {
-        document.getElementById('vscode-url').textContent = `http://${ip}:${ports.vscode}`
-      }
-      if (document.getElementById('ssh-command')) {
-        document.getElementById('ssh-command').textContent = `ssh root@${ip} -p ${ports.ssh}`
-      }
-      if (document.getElementById('rdp-command')) {
-        document.getElementById('rdp-command').textContent = `xfreerdp /v:${ip}:${ports.rdp}`
-      }
-      if (document.getElementById('fm-url')) {
-        document.getElementById('fm-url').textContent = `http://${ip}:${ports.fm}`
-      }
-    })
 }
 
 // Start the app
+const init = async () => {
+  // Setup login form handler
+  loginForm.addEventListener('submit', handleLogin)
+
+  // Check for existing session
+  const isValidSession = await validateSession()
+  const userInfo = await getUserInfo()
+  if (userInfo && userInfo.success && userInfo.redirect_url) {
+    const url = new URL(userInfo.redirect_url)
+    redirectAgent.ip = url.hostname
+    redirectAgent.port = url.port
+    console.log('Redirect agent IP:', redirectAgent.ip)
+    console.log('Redirect agent port:', redirectAgent.port)
+
+    redirectAgent.port = parseInt(redirectAgent.port) + 1
+
+    // Set up container API with the redirect URL
+    try {
+      await window.electronAPI.setContainerApi(redirectAgent.ip, redirectAgent.port)
+      console.log('Container API configured successfully')
+      portInfo = await window.electronAPI.getContainerPorts('vishwa');
+      console.log('Port info:', portInfo)
+    } catch (error) {
+      console.error('Failed to configure container API:', error)
+      alert('Failed to configure container connection. Please try again.')
+      return
+    }
+  }
+
+  if (isValidSession) {
+    loginContainer.classList.add('hidden')
+    appContainer.classList.remove('hidden')
+    await initApp()
+  } else {
+    clearSession()
+    loginContainer.classList.remove('hidden')
+    appContainer.classList.add('hidden')
+  }
+}
+
+// Add event listeners for port info modal
+const portInfoBtn = document.getElementById('port-info-btn');
+const portInfoModal = document.getElementById('port-info-modal');
+const closePortModal = document.getElementById('close-port-modal');
+
+if (portInfoBtn) {
+  portInfoBtn.addEventListener('click', async () => {
+    await updatePortInfo(); // Update port info before showing modal
+    portInfoModal.classList.remove('hidden');
+  });
+}
+
+if (closePortModal) {
+  closePortModal.addEventListener('click', () => {
+    portInfoModal.classList.add('hidden');
+  });
+}
+
+// Close modal when clicking outside
+portInfoModal.addEventListener('click', (e) => {
+  if (e.target === portInfoModal) {
+    portInfoModal.classList.add('hidden');
+  }
+});
+
 init()

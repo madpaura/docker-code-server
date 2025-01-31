@@ -477,3 +477,19 @@ def init_backend_routes(app):
             stats = docker_manager.get_container_stats(container)
             return jsonify({"success": True, "stats": stats})
         return jsonify({"success": False, "error": "Container not found"}), 404
+
+    @app.route("/api/containers/<string:container_id>/ports", methods=["GET"])
+    def get_port_info(container_id):
+        port_manager = PortManager()
+        new_ports = port_manager.get_allocated_ports(container_id)
+        start_port = int(new_ports["start_port"])
+        
+        port_info = {
+            "code_port": start_port,
+            "ssh_port": start_port + 1,
+            "spice_port": start_port + 2,
+            "fm_ui_port": start_port + 3,
+            "fm_port": start_port + 4
+        }
+        
+        return jsonify(port_info)
