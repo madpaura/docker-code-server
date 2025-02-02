@@ -410,21 +410,6 @@ ipcMain.handle('get-container-ports', async (event, containerId) => {
   }
 });
 
-// Handle remote-viewer launch
-ipcMain.handle('launch-remote-viewer', async (event, { host, port }) => {
-  return new Promise((resolve, reject) => {
-    const command = `remote-viewer spice://${host}:${port}`;
-    exec(command, (error, stdout, stderr) => {
-      if (error) {
-        console.error('Error launching remote-viewer:', error);
-        reject(error);
-        return;
-      }
-      resolve(stdout);
-    });
-  });
-});
-
 // Other IPC Handlers
 ipcMain.handle('close-app', () => {
   app.quit()
@@ -446,5 +431,45 @@ ipcMain.handle('ssh-connect', async (event, { username, host, port }) => {
   } catch (error) {
     console.error('SSH connection failed:', error)
     return { success: false, error: error.response?.data?.error || `SSH connection failed: ${error.message}` }
+  }
+})
+
+ipcMain.handle('vscode-connect', async (event, { host, port }) => {
+  try {
+    const url = `http://${host}:${port}`
+    const { shell } = require('electron')
+    await shell.openExternal(url)
+    return { success: true }
+  } catch (error) {
+    console.error('VS Code connection failed:', error)
+    return { success: false, error: `VS Code connection failed: ${error.message}` }
+  }
+})
+
+ipcMain.handle('rdp-connect', async (event, { host, port }) => {
+  try {
+    const command = `remote-viewer spice://${host}:${port}`
+    const { spawn } = require('child_process')
+    const viewer = spawn('remote-viewer', [`spice://${host}:${port}`], {
+      detached: true,
+      stdio: 'ignore'
+    })
+    viewer.unref()
+    return { success: true }
+  } catch (error) {
+    console.error('RDP connection failed:', error)
+    return { success: false, error: `RDP connection failed: ${error.message}` }
+  }
+})
+
+ipcMain.handle('fm-connect', async (event, { host, port }) => {
+  try {
+    const url = `http://${host}:${port}`
+    const { shell } = require('electron')
+    await shell.openExternal(url)
+    return { success: true }
+  } catch (error) {
+    console.error('File Manager connection failed:', error)
+    return { success: false, error: `File Manager connection failed: ${error.message}` }
   }
 })

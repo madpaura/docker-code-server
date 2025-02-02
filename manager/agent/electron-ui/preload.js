@@ -18,9 +18,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Other
   generateUserHash: (username) => ipcRenderer.invoke('generate-user-hash', username),
   closeApp: () => ipcRenderer.invoke('close-app'),
+  
+  // Service connections
   sshConnect: (username, host, port) => ipcRenderer.invoke('ssh-connect', { username, host, port }),
+  vscodeConnect: (host, port) => ipcRenderer.invoke('vscode-connect', { host, port }),
+  rdpConnect: (host, port) => ipcRenderer.invoke('rdp-connect', { host, port }),
+  fmConnect: (host, port) => ipcRenderer.invoke('fm-connect', { host, port }),
+  
+  // Utilities
   openExternal: (url) => shell.openExternal(url),
-  launchRemoteViewer: (host, port) => ipcRenderer.invoke('launch-remote-viewer', { host, port }),
+  
+  // Event listeners
   on: (channel, callback) => {
     ipcRenderer.on(channel, (event, ...args) => callback(...args))
   }

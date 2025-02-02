@@ -120,7 +120,7 @@ const fetchContainers = async () => {
       // Start stats updates
       updateStats()
       if (refreshInterval)
-         clearInterval(refreshInterval)
+        clearInterval(refreshInterval)
 
       refreshInterval = setInterval(updateStats, 50000)
     } else {
@@ -312,7 +312,7 @@ const handleContainerAction = async (action) => {
   try {
     showLoading()
     await window.electronAPI.containerAction(action, currentContainerId)
-    
+
     // Refresh container state after action
     await fetchContainers()
     await refreshContainerState()
@@ -326,12 +326,12 @@ const handleContainerAction = async (action) => {
 // Handle create container form submission
 const handleCreateContainer = async (e) => {
   e.preventDefault()
-  
+
   try {
     showLoading()
     const userInfo = await getUserInfo()
     await window.electronAPI.containerCreate(userInfo.username, userInfo.sessionToken)
-    
+
     // Refresh container list after creation
     await fetchContainers()
   } catch (error) {
@@ -345,7 +345,7 @@ const handleCreateContainer = async (e) => {
 const handleLogout = async () => {
   try {
     showLoading()
-    
+
     // Stop any running intervals
     if (refreshInterval) {
       clearInterval(refreshInterval)
@@ -504,17 +504,12 @@ window.addEventListener('beforeunload', () => {
 })
 
 // Handle service navigation
-const openVSCodeInBrowser = () => {
-  if (containerState.exists && containerState.running && redirectAgent.ip && portInfo?.code_port) {
-    const url = `http://${redirectAgent.ip}:${portInfo.code_port}`;
-    window.electronAPI.openExternal(url);
-  }
-};
 
 const launchFMUI = () => {
   if (containerState.exists && containerState.running && redirectAgent.ip && portInfo?.fm_ui_port) {
-    const url = `http://${redirectAgent.ip}:${portInfo.fm_ui_port}`;
-    window.electronAPI.openExternal(url);
+    window.electronAPI.fmConnect(redirectAgent.ip, portInfo.fm_ui_port)
+      .catch(error => console.error('Failed to launch FM UI:', error));
+
   }
 };
 
@@ -522,7 +517,7 @@ const launchFMUI = () => {
 // Function to launch remote viewer
 const launchRemoteViewer = () => {
   if (containerState.exists && containerState.running && redirectAgent.ip && portInfo?.spice_port) {
-    window.electronAPI.launchRemoteViewer(redirectAgent.ip, portInfo.spice_port)
+    window.electronAPI.rdpConnect(redirectAgent.ip, portInfo.spice_port)
       .catch(error => console.error('Failed to launch remote-viewer:', error));
   }
 };
@@ -530,13 +525,6 @@ const launchRemoteViewer = () => {
 serviceButtons.forEach(button => {
   button.addEventListener('click', () => {
     const service = button.getAttribute('data-service')
-    if (service === 'vscode') {
-      openVSCodeInBrowser();
-    } else if (service === 'rdp') {
-      launchRemoteViewer();
-    } else if (service === 'fm') {
-      launchFMUI();
-    }
     showServiceInfo(service)
   })
 })
@@ -550,6 +538,12 @@ window.electronAPI.on('container-action', (action) => {
 window.electronAPI.on('service-action', (service) => {
   showServiceInfo(service)
 })
+
+const handleVSCodeConnect = async () => {
+  const host = redirectAgent.ip
+  const port = portInfo.code_port
+  await window.electronAPI.vscodeConnect(host, port)
+}
 
 // Handle SSH connection form submission
 const handleSSHConnect = async () => {
@@ -577,11 +571,11 @@ const showServiceInfo = (service) => {
       // Add click handler to open VS Code URL
       const vscodeUrl = document.getElementById('vscode-url');
       if (vscodeUrl) {
-        const url = `http://${redirectAgent.ip}:${portInfo.code_port}`;
         vscodeUrl.parentElement.addEventListener('click', () => {
-          window.electronAPI.openExternal(url);
+          handleVSCodeConnect()
         });
       }
+      handleVSCodeConnect()
       break
 
     case 'ssh':
@@ -596,6 +590,13 @@ const showServiceInfo = (service) => {
           </div>
         </div>
       `
+      const sshCommand = document.getElementById('ssh-command');
+      if (sshCommand) {
+        sshCommand.parentElement.addEventListener('click', () => {
+          handleSSHConnect()
+        });
+      }
+
       handleSSHConnect()
       break
 
@@ -612,9 +613,10 @@ const showServiceInfo = (service) => {
       if (rdpCommand) {
         rdpCommand.parentElement.addEventListener('click', launchRemoteViewer);
       }
+      launchRemoteViewer()
       break
 
-    case 'fm':
+      case 'fm':
       serviceTitle.textContent = 'FM UI Access'
       serviceContent.innerHTML = `
         <div class="mb-2">Use the following URL to access FM UI:</div>
@@ -622,6 +624,13 @@ const showServiceInfo = (service) => {
           <code id="fm-url"> http://${redirectAgent.ip}:${portInfo.fm_ui_port}</code>
         </div>
       `
+      const fmUrl = document.getElementById('fm-url');
+      if (fmUrl) {
+        fmUrl.parentElement.addEventListener('click', () => {
+          launchFMUI()
+        });
+      }
+      launchFMUI()
       break
 
     case 'refresh':
