@@ -1,4 +1,4 @@
-from flask import request, jsonify
+from flask import request, jsonify, send_from_directory
 import docker
 import docker.errors
 import docker.models
@@ -286,7 +286,17 @@ class DockerHelper:
 docker_manager = DockerContainerManager()
 docker_helper = DockerHelper()
 
+# Static file serving directory
+STATIC_DOWNLOADS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static/downloads')
+
+# Ensure the downloads directory exists
+os.makedirs(STATIC_DOWNLOADS_DIR, exist_ok=True)
+
 def init_backend_routes(app):
+    @app.route('/downloads/<path:filename>')
+    def download_file(filename):
+        return send_from_directory(STATIC_DOWNLOADS_DIR, filename, as_attachment=True)
+
     @app.route("/api/containers", methods=["POST"])
     def create_container():
         data = request.get_json()

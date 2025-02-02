@@ -1,7 +1,7 @@
-async function connectRDP(host, port, password) {
+async function connectRDP(host, port, spice_port) {
     try {
-        const result = await window.electron.invoke('rdp-connect', { host, port, password });
-        
+        const result = await window.electron.invoke('rdp-connect', { host, port, spice_port });
+
         if (!result.success) {
             if (result.needsInstallation) {
                 // The helper has already shown the installation prompt

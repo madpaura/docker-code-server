@@ -502,7 +502,7 @@ const launchFMUI = () => {
 // Function to launch remote viewer
 const launchRemoteViewer = () => {
   if (containerState.exists && containerState.running && redirectAgent.ip && portInfo?.spice_port) {
-    window.electronAPI.rdpConnect(redirectAgent.ip, portInfo.spice_port)
+    window.electronAPI.rdpConnect(redirectAgent.ip, redirectAgent.port, portInfo.spice_port)
       .catch(error => console.error('Failed to launch remote-viewer:', error));
   }
 };

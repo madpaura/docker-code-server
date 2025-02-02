@@ -13,10 +13,10 @@ function setupServiceHandlers() {
         }
     });
 
-    ipcMain.handle('rdp-connect', async (event, { host, port, password }) => {
+    ipcMain.handle('rdp-connect', async (event, { host, port, spice_port }) => {
         const RDPHelper = require('../utils/rdpHelper');
         try {
-            return await RDPHelper.launchRDP(event.sender.getOwnerBrowserWindow(), { host, port, password });
+            return await RDPHelper.launchRDP(event.sender.getOwnerBrowserWindow(), { host, port, spice_port });
         } catch (error) {
             console.error('RDP connection failed:', error);
             return {

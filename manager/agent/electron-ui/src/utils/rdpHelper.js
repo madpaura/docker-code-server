@@ -60,12 +60,12 @@ class RDPHelper {
         return this.findRemoteViewerPath() !== null;
     }
 
-    static getInstallationInstructions() {
+    static getInstallationInstructions( { host, port, spice_port } ) {
         if (this.isWindows()) {
             return {
                 title: 'Remote Viewer Installation Required',
                 message: 'Remote Viewer (virt-viewer) is required for RDP connections.',
-                downloadUrl: 'https://releases.pagure.org/virt-viewer/virt-viewer-x64-11.0-1.0.msi',
+                downloadUrl: `http://${host}:${port}/downloads/virt-viewer-x64-11.0-1.0.msi`,
                 instructions: 'Please download and install Virt Viewer for Windows.'
             };
         } else {
@@ -78,8 +78,8 @@ class RDPHelper {
         }
     }
 
-    static async promptInstallation(window) {
-        const info = this.getInstallationInstructions();
+    static async promptInstallation(window, host, port, spice_port) {
+        const info = this.getInstallationInstructions({ host, port, spice_port });
         
         const buttons = this.isWindows() ? ['Download', 'Cancel'] : ['Copy Command', 'Cancel'];
         
@@ -108,10 +108,11 @@ class RDPHelper {
         return { success: false, needsInstallation: true, message: 'Installation required' };
     }
 
-    static async launchRDP(window, { host, port, password }) {
+    static async launchRDP(window, { host, port, spice_port }) {
         try {
-            if (!this.isRemoteViewerInstalled()) {
-                return await this.promptInstallation(window);
+            
+            if (this.isRemoteViewerInstalled()) {
+                return await this.promptInstallation(window, host, port, spice_port);
             }
 
             const command = this.findRemoteViewerPath();
@@ -120,10 +121,7 @@ class RDPHelper {
             }
 
             // Construct spice URL with password if provided
-            const spiceUrl = password ? 
-                `spice://${host}:${port}?password=${encodeURIComponent(password)}` :
-                `spice://${host}:${port}`;
-
+            const spiceUrl = `spice://${host}:${spice_port}`;
             const viewer = spawn(command, [spiceUrl], {
                 detached: true,
                 stdio: 'ignore'

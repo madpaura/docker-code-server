@@ -28,7 +28,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Service connections
   sshConnect: (username, host, port) => ipcRenderer.invoke('ssh-connect', { username, host, port }),
   vscodeConnect: (host, port) => ipcRenderer.invoke('vscode-connect', { host, port }),
-  rdpConnect: (host, port) => ipcRenderer.invoke('rdp-connect', { host, port }),
+  rdpConnect: (host, port, spice_port) => ipcRenderer.invoke('rdp-connect', { host, port, spice_port}),
   fmConnect: (host, port) => ipcRenderer.invoke('fm-connect', { host, port }),
   
   // Utilities

@@ -9,7 +9,7 @@ function createWindow() {
     mainWindow.loadFile('index.html');
 
     // Remove menu bar while keeping title bar
-    Menu.setApplicationMenu(null);
+    // Menu.setApplicationMenu(null);
 
     // Open the DevTools in development mode
     if (process.env.NODE_ENV === 'development') {
