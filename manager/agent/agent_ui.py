@@ -186,6 +186,23 @@ def display_service_actions(container_id, user, page):
         blue_header(url)
         webbrowser.open(url)
 
+    with st.sidebar.expander("### 🖥️ Desktop App"):
+        system = platform.system().lower()
+        if system == "windows":
+            add_download_tools(
+                "cxl-qvp_1.0.0.exe", 
+                "📥 Windows Desktop App", 
+                "static/downloads/cxl-qvp_1.0.0.exe", 
+                "application/x-msdownload"
+            )
+        elif system == "linux":
+            add_download_tools(
+                "cxl-qvp_1.0.0_amd64.deb", 
+                "📥 Linux .deb Package", 
+                "static/downloads/cxl-qvp_1.0.0_amd64.deb", 
+                "application/vnd.debian.binary-package"
+            )
+
     with st.sidebar.expander("📡 Connection Info"):
         st.write(f"Container IP: {container_ip}")
         st.write("Default Ports:")
@@ -194,10 +211,12 @@ def display_service_actions(container_id, user, page):
             st.write(f"- {service} - {port}")
 
     with st.sidebar.expander("📥 Download Tools"):
-        add_download_tools("putty-64bit-0.82-installer.msi", "📥 Putty ", "download/putty-64bit-0.82-installer.msi", "application/msi")
-        add_download_tools("virt-viewer-x64-11.0-1.0.msi", "📥 Spice Viewer ", "download/virt-viewer-x64-11.0-1.0.msi", "application/msi")
-        add_download_tools("TRACE32.zip", "📥 TRACE32 ", "download/TRACE32.zip", "application/zip")
-
+        # Common tools
+        add_download_tools("putty-64bit-0.82-installer.msi", "📥 Putty ", "static/downloads/putty-64bit-0.82-installer.msi", "application/msi")
+        add_download_tools("virt-viewer-x64-11.0-1.0.msi", "📥 Spice Viewer ", "static/downloads/virt-viewer-x64-11.0-1.0.msi", "application/msi")
+        add_download_tools("TRACE32.zip", "📥 TRACE32 ", "static/downloads/TRACE32.zip", "application/zip")
+        
+    
 def add_download_tools(tool, label, path, mime):
     try:
         with open(path, "rb") as file:
