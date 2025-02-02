@@ -79,7 +79,8 @@ const updateButtonStates = () => {
 // Fetch available containers
 const fetchContainers = async () => {
   try {
-    const container_name = await getContainerName('vishwa')
+    const userData = getSession()
+    const container_name = await getContainerName(userData.username)
     const response = await window.electronAPI.getContainerInfo(container_name)
     console.log('Container Info Response:', response)
 
@@ -123,7 +124,8 @@ const fetchContainers = async () => {
 // Update container stats
 const updateStats = async () => {
   try {
-    const container_name = await getContainerName('vishwa')
+    const userData = getSession()
+    const container_name = await getContainerName(userData.username)
 
     const response = await window.electronAPI.getContainerStats(container_name)
     console.log('Container Stats:', JSON.stringify(response, null, 2))
@@ -228,8 +230,7 @@ const updatePortInfo = async () => {
   if (!currentContainerId || !containerState.exists) return;
 
   try {
-    // const container_name = await getContainerName('vishwa')
-    // const portInfo = await window.electronAPI.getContainerPorts('vishwa');
+
     const portInfoHtml = `
       <div class="space-y-2">
         <div class="flex items-center justify-between p-2 bg-gray-50 rounded">
@@ -281,7 +282,7 @@ const handleContainerAction = async (action) => {
   if (!currentContainerId && action !== 'create') return
 
   try {
-    showLoading()
+    window.electronAPI.showLoading()
     await window.electronAPI.containerAction(action, currentContainerId)
 
     // Refresh container state after action
@@ -299,7 +300,7 @@ const handleCreateContainer = async (e) => {
   e.preventDefault()
 
   try {
-    showLoading()
+    window.electronAPI.showLoading()
     const userInfo = await getUserInfo()
     await window.electronAPI.containerCreate(userInfo.username, userInfo.sessionToken)
 
@@ -467,7 +468,8 @@ const initApp = async () => {
     try {
       await window.electronAPI.setContainerApi(redirectAgent.ip, redirectAgent.port)
       console.log('Container API configured successfully')
-      portInfo = await window.electronAPI.getContainerPorts('vishwa');
+      const userData = getSession()
+      portInfo = await window.electronAPI.getContainerPorts(userData.username);
     } catch (error) {
       console.error('Failed to configure container API:', error)
       alert('Failed to configure container connection. Please try again.')
@@ -630,7 +632,8 @@ const showServiceInfo = (service) => {
 // Update the refreshContainerState function to include port info
 const refreshContainerState = async () => {
   try {
-    const container_name = await getContainerName('vishwa')
+    const userData = getSession()
+    const container_name = await getContainerName(userData.username)
     const response = await window.electronAPI.getContainerInfo(container_name)
 
     if (response && response.container) {

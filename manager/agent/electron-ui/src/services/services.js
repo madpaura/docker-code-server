@@ -13,6 +13,19 @@ function setupServiceHandlers() {
         }
     });
 
+    ipcMain.handle('rdp-connect', async (event, { host, port, password }) => {
+        const RDPHelper = require('../utils/rdpHelper');
+        try {
+            return await RDPHelper.launchRDP(event.sender.getOwnerBrowserWindow(), { host, port, password });
+        } catch (error) {
+            console.error('RDP connection failed:', error);
+            return {
+                success: false,
+                error: error.response?.data?.error || `RDP connection failed: ${error.message}`
+            };
+        }
+    });
+
     ipcMain.handle('ssh-connect', async (event, { username, host, port }) => {
         const SSHHelper = require('../utils/sshHelper');
         try {
@@ -26,20 +39,6 @@ function setupServiceHandlers() {
         }
     });
 
-    ipcMain.handle('rdp-connect', async (event, { host, port }) => {
-        const { spawn } = require('child_process');
-        try {
-            const viewer = spawn('remote-viewer', [`spice://${host}:${port}`], {
-                detached: true,
-                stdio: 'ignore'
-            });
-            viewer.unref();
-            return { success: true };
-        } catch (error) {
-            console.error('RDP connection failed:', error);
-            return { success: false, error: error.message };
-        }
-    });
 
     ipcMain.handle('fm-connect', async (event, { host, port }) => {
         try {
