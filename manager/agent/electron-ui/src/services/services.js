@@ -14,22 +14,14 @@ function setupServiceHandlers() {
     });
 
     ipcMain.handle('ssh-connect', async (event, { username, host, port }) => {
-        const { spawn } = require('child_process');
-        const command = `ssh ${username}@${host} -p ${port};read`;
-        
+        const SSHHelper = require('../utils/sshHelper');
         try {
-            const terminal = spawn('gnome-terminal', ['--', 'bash', '-c', command], {
-                detached: true,
-                stdio: 'ignore'
-            });
-            
-            terminal.unref();
-            return { success: true };
+            return await SSHHelper.launchSSH(username, host, port);
         } catch (error) {
             console.error('SSH connection failed:', error);
-            return { 
-                success: false, 
-                error: error.response?.data?.error || `SSH connection failed: ${error.message}` 
+            return {
+                success: false,
+                error: error.response?.data?.error || `SSH connection failed: ${error.message}`
             };
         }
     });
