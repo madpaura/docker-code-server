@@ -65,7 +65,7 @@ class RDPHelper {
             return {
                 title: 'Remote Viewer Installation Required',
                 message: 'Remote Viewer (virt-viewer) is required for RDP connections.',
-                downloadUrl: 'https://virt-manager.org/download/',
+                downloadUrl: 'https://releases.pagure.org/virt-viewer/virt-viewer-x64-11.0-1.0.msi',
                 instructions: 'Please download and install Virt Viewer for Windows.'
             };
         } else {
