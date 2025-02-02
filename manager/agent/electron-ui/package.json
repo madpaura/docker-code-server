@@ -27,7 +27,16 @@
     "linux": {
       "target": ["deb"],
       "category": "Development",
-      "maintainer": "QVP Team"
+      "maintainer": "QVP Team",
+      "desktop": {
+        "Name": "CXL QVP",
+        "Comment": "QVP Development Cloud Manager for CXL",
+        "Categories": "Development"
+      }
+    },
+    "deb": {
+      "afterInstall": "debian/postinst",
+      "afterRemove": "debian/postrm"
     }
   },
   "keywords": [],
