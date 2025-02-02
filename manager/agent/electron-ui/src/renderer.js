@@ -1,17 +1,3 @@
-// Generate container name from username
-const getContainerName = async (username) => {
-  const hash = await window.electronAPI.generateUserHash(username)
-  return `code-server-${username}-${hash}`
-}
-
-const cpuGauge = document.getElementById('cpu-gauge')
-const memoryGauge = document.getElementById('memory-gauge')
-const containerInfo = document.getElementById('container-info')
-const actionButtons = document.querySelectorAll('#create-btn, #start-btn, #stop-btn, #restart-btn, #remove-btn')
-const serviceButtons = document.querySelectorAll('.service-btn')
-const serviceInfoSection = document.getElementById('service-info')
-const serviceTitle = document.getElementById('service-title')
-const serviceContent = document.getElementById('service-content')
 
 let currentContainerId = null
 let refreshInterval = null
@@ -25,24 +11,26 @@ let redirectAgent = {
 }
 let portInfo = null
 
-const loadingOverlay = document.getElementById('loading-overlay')
-const loadingText = document.getElementById('loading-text')
 
-const showLoading = (text = 'Loading...') => {
-  loadingText.textContent = text
-  loadingOverlay.classList.add('active')
-}
-
-const hideLoading = () => {
-  loadingText.textContent = ''
-  loadingOverlay.classList.remove('active')
-}
+const containerInfo = document.getElementById('container-info')
+const actionButtons = document.querySelectorAll('#create-btn, #start-btn, #stop-btn, #restart-btn, #remove-btn')
+const serviceButtons = document.querySelectorAll('.service-btn')
+const serviceInfoSection = document.getElementById('service-info')
+const serviceTitle = document.getElementById('service-title')
+const serviceContent = document.getElementById('service-content')
 
 const containerSelect = document.getElementById('container-select')
 const createButton = document.getElementById('create-btn')
 const startButton = document.getElementById('start-btn')
 const stopButton = document.getElementById('stop-btn')
 const removeButton = document.getElementById('remove-btn')
+
+
+// Generate container name from username
+const getContainerName = async (username) => {
+  const hash = await window.electronAPI.generateUserHash(username)
+  return `code-server-${username}-${hash}`
+}
 
 const updateButtonStates = () => {
   console.log('Updating button states:', containerState)
@@ -88,10 +76,6 @@ const updateButtonStates = () => {
   }
 }
 
-
-// Initialize periodic refresh
-let stateRefreshInterval = null
-
 // Fetch available containers
 const fetchContainers = async () => {
   try {
@@ -122,7 +106,7 @@ const fetchContainers = async () => {
       if (refreshInterval)
         clearInterval(refreshInterval)
 
-      refreshInterval = setInterval(updateStats, 50000)
+      refreshInterval = setInterval(updateStats, 150000)
     } else {
       containerSelect.textContent = 'No container selected'
       currentContainerId = null
@@ -155,20 +139,7 @@ const updateStats = async () => {
     const memoryUsed = stats.memory_used || 0
     const memoryLimit = stats.memory_limit || 0
 
-    // Update progress bars
-    const cpuProgress = document.getElementById('cpu-progress')
-    const memoryProgress = document.getElementById('memory-progress')
-
-    if (cpuProgress) {
-      cpuProgress.style.width = `${cpuUsage}%`
-      cpuProgress.textContent = `${cpuUsage.toFixed(1)}%`
-    }
-
-    if (memoryProgress) {
-      memoryProgress.style.width = `${memoryUsage}%`
-      memoryProgress.textContent = `${memoryUsage.toFixed(1)}%`
-    }
-
+    containerInfo.classList.remove('hidden');
     containerInfo.innerHTML = `
     <style>
       .metrics-container {
@@ -220,7 +191,7 @@ const updateStats = async () => {
       }
     </style>
     
-    <div class="metrics-container">
+    <div class="metrics-container" id="cpu-progress">
       <div class="metric-item">
         <div class="progress-label">
           CPU Usage
@@ -231,7 +202,7 @@ const updateStats = async () => {
         </div>
       </div>
       
-      <div class="metric-item">
+      <div class="metric-item" id="memory-progress">
         <div class="progress-label">
           Memory Usage
           <span>${memoryUsage.toFixed(1)}%</span>
@@ -241,7 +212,7 @@ const updateStats = async () => {
         </div>
       </div>
       
-      <div class="memory-stats">
+      <div class="memory-stats" id="memory-stats">
         <div>Used: ${memoryUsed.toFixed(2)} MB</div>
         <div>Total: ${memoryLimit.toFixed(2)} MB</div>
       </div>
@@ -319,7 +290,7 @@ const handleContainerAction = async (action) => {
   } catch (error) {
     console.error(`Error performing container action ${action}:`, error)
   } finally {
-    hideLoading()
+    window.electronAPI.hideLoading()
   }
 }
 
@@ -337,23 +308,19 @@ const handleCreateContainer = async (e) => {
   } catch (error) {
     console.error('Error creating container:', error)
   } finally {
-    hideLoading()
+    window.electronAPI.hideLoading()
   }
 }
 
 // Handle logout
 const handleLogout = async () => {
   try {
-    showLoading()
+    window.electronAPI.showLoading('Logging out...')
 
     // Stop any running intervals
     if (refreshInterval) {
       clearInterval(refreshInterval)
       refreshInterval = null
-    }
-    if (stateRefreshInterval) {
-      clearInterval(stateRefreshInterval)
-      stateRefreshInterval = null
     }
 
     // Reset container state
@@ -375,10 +342,13 @@ const handleLogout = async () => {
     }
     clearSession()
 
-    // Reset UI
+    // Reset UI elements
     containerSelect.textContent = 'No container selected'
     serviceInfoSection.classList.add('hidden')
+
     updateButtonStates()
+
+    window.electronAPI.resetUI()
 
     // Show login screen
     document.getElementById('app-container').classList.add('hidden')
@@ -386,7 +356,7 @@ const handleLogout = async () => {
   } catch (error) {
     console.error('Error during logout:', error)
   } finally {
-    hideLoading()
+    window.electronAPI.hideLoading()
   }
 }
 
@@ -482,25 +452,38 @@ const handleLogin = async (e) => {
 // Initialize app
 const initApp = async () => {
 
+  const userInfo = await getUserInfo()
+  
+  if (userInfo && userInfo.success && userInfo.redirect_url) {
+    const url = new URL(userInfo.redirect_url)
+    redirectAgent.ip = url.hostname
+    redirectAgent.port = url.port
+    console.log('Redirect agent IP:', redirectAgent.ip)
+    console.log('Redirect agent port:', redirectAgent.port)
+
+    redirectAgent.port = parseInt(redirectAgent.port) + 1
+
+    // Set up container API with the redirect URL
+    try {
+      await window.electronAPI.setContainerApi(redirectAgent.ip, redirectAgent.port)
+      console.log('Container API configured successfully')
+      portInfo = await window.electronAPI.getContainerPorts('vishwa');
+    } catch (error) {
+      console.error('Failed to configure container API:', error)
+      alert('Failed to configure container connection. Please try again.')
+      return
+    }
+  }
+
   // Fetch available containers
   await fetchContainers()
 
-  // Set initial container if available
-  if (containerState.exists) {
-    updateStats()
-    refreshInterval = setInterval(updateStats, 75000)
-  }
-
   refreshContainerState()
-
-  // Start state refresh
-  // stateRefreshInterval = setInterval(refreshContainerState, 10000)
 }
 
 // Cleanup intervals on window close
 window.addEventListener('beforeunload', () => {
   clearInterval(refreshInterval)
-  clearInterval(stateRefreshInterval)
 })
 
 // Handle service navigation
@@ -669,29 +652,6 @@ const init = async () => {
 
   // Check for existing session
   const isValidSession = await validateSession()
-  const userInfo = await getUserInfo()
-  if (userInfo && userInfo.success && userInfo.redirect_url) {
-    const url = new URL(userInfo.redirect_url)
-    redirectAgent.ip = url.hostname
-    redirectAgent.port = url.port
-    console.log('Redirect agent IP:', redirectAgent.ip)
-    console.log('Redirect agent port:', redirectAgent.port)
-
-    redirectAgent.port = parseInt(redirectAgent.port) + 1
-
-    // Set up container API with the redirect URL
-    try {
-      await window.electronAPI.setContainerApi(redirectAgent.ip, redirectAgent.port)
-      console.log('Container API configured successfully')
-      portInfo = await window.electronAPI.getContainerPorts('vishwa');
-      console.log('Port info:', portInfo)
-    } catch (error) {
-      console.error('Failed to configure container API:', error)
-      alert('Failed to configure container connection. Please try again.')
-      return
-    }
-  }
-
   if (isValidSession) {
     loginContainer.classList.add('hidden')
     appContainer.classList.remove('hidden')

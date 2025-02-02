@@ -1,6 +1,12 @@
 const { contextBridge, ipcRenderer, shell } = require('electron')
+const { showLoading, hideLoading, resetUI } = require('./src/utils/ui')
 
 contextBridge.exposeInMainWorld('electronAPI', {
+    // UI Utilities
+    showLoading: showLoading,
+    hideLoading: hideLoading,
+    resetUI: resetUI,
+    
   // Auth related
   login: (username, password) => ipcRenderer.invoke('login', { username, password }),
   validateSession: (userId, sessionToken) => ipcRenderer.invoke('validate-session', { userId, sessionToken }),

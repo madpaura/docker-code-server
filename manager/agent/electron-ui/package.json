@@ -1,8 +1,9 @@
 {
-  "name": "electron-ui",
+  "name": "cxl-qvp",
   "version": "1.0.0",
-  "description": "Electron-based UI application for managing services",
-  "main": "main.js",
+  "description": "QVP Development Cloud Manager for CXL",
+  "homepage": "http://localhost",
+  "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "build": "electron-builder",
@@ -10,8 +11,11 @@
   },
   "build": {
     "appId": "com.electron.ui",
+    "icon": "assets/icon.png",
     "files": [
-      "**/*",
+      "**/*"
+    ],
+    "extraFiles": [
       ".env"
     ],
     "mac": {
@@ -21,7 +25,9 @@
       "target": "nsis"
     },
     "linux": {
-      "target": "AppImage"
+      "target": ["deb"],
+      "category": "Development",
+      "maintainer": "QVP Team"
     }
   },
   "keywords": [],
